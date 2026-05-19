@@ -195,17 +195,30 @@ export default function Income() {
       </div>
 
       {/* Filters */}
-      <div className="card px-3 py-2.5 flex flex-wrap items-center gap-2">
-        <Filter size={13} className="text-gray-400 shrink-0" />
-        <input type="date" className="input !py-1.5 !text-xs w-32" value={filters.startDate} onChange={e => applyFilter('startDate', e.target.value)} />
-        <input type="date" className="input !py-1.5 !text-xs w-32" value={filters.endDate} onChange={e => applyFilter('endDate', e.target.value)} />
-        <select className="input !py-1.5 !text-xs w-36" value={filters.source} onChange={e => applyFilter('source', e.target.value)}>
-          <option value="">All sources</option>
-          {SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <input className="input !py-1.5 !text-xs flex-1 min-w-32" placeholder="Search…" value={filters.search} onChange={e => applyFilter('search', e.target.value)} />
-        <button onClick={clearFilters} className="btn-secondary !py-1.5 !px-2.5 !text-xs shrink-0">Clear</button>
-        <span className="text-xs text-gray-400 dark:text-slate-500 ml-auto shrink-0">{total} records</span>
+      <div className="card px-3 py-2.5 flex flex-wrap items-end gap-2">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">From</span>
+          <input type="date" className="input !py-1.5 !text-xs w-32" value={filters.startDate} onChange={e => applyFilter('startDate', e.target.value)} />
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">To</span>
+          <input type="date" className="input !py-1.5 !text-xs w-32" value={filters.endDate} onChange={e => applyFilter('endDate', e.target.value)} />
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">Source</span>
+          <select className="input !py-1.5 !text-xs w-36" value={filters.source} onChange={e => applyFilter('source', e.target.value)}>
+            <option value="">All sources</option>
+            {SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div className="flex flex-col gap-0.5 flex-1 min-w-32">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">Search</span>
+          <input className="input !py-1.5 !text-xs" placeholder="description, notes…" value={filters.search} onChange={e => applyFilter('search', e.target.value)} />
+        </div>
+        <div className="flex items-center gap-2 ml-auto">
+          <button onClick={clearFilters} className="btn-secondary !py-1.5 !px-2.5 !text-xs">Clear</button>
+          <span className="text-xs text-gray-400 dark:text-slate-500">{total} records</span>
+        </div>
       </div>
 
       {/* Table */}

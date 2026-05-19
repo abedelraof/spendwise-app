@@ -106,11 +106,16 @@ export default function Reports() {
   return (
     <div className="space-y-5 animate-fade-in">
       {/* Filter bar */}
-      <div className="card px-3 py-2.5 flex flex-wrap items-center gap-2">
-        <Filter size={13} className="text-gray-400 shrink-0" />
-        <input type="date" className="input !py-1.5 !text-xs w-32" value={startDate} onChange={e => setStartDate(e.target.value)} />
-        <input type="date" className="input !py-1.5 !text-xs w-32" value={endDate} onChange={e => setEndDate(e.target.value)} />
-        <div className="ml-auto flex items-center gap-3">
+      <div className="card px-3 py-2.5 flex flex-wrap items-end gap-2">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">From</span>
+          <input type="date" className="input !py-1.5 !text-xs w-32" value={startDate} onChange={e => setStartDate(e.target.value)} />
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">To</span>
+          <input type="date" className="input !py-1.5 !text-xs w-32" value={endDate} onChange={e => setEndDate(e.target.value)} />
+        </div>
+        <div className="ml-auto flex items-end gap-3">
           {!loading && totalSpent > 0 && (
             <span className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
               {fmt(totalSpent)} <span className="text-xs font-normal text-gray-400">{currency}</span>

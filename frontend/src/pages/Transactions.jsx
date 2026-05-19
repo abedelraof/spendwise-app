@@ -97,26 +97,50 @@ export default function Transactions() {
   return (
     <div className="space-y-4 animate-fade-in">
       {/* Filters */}
-      <div className="card px-3 py-2.5 flex flex-wrap items-center gap-2">
-        <Filter size={13} className="text-gray-400 shrink-0" />
-        <input type="date" className="input !py-1.5 !text-xs w-32" value={filters.startDate} onChange={e => applyFilter('startDate', e.target.value)} />
-        <input type="date" className="input !py-1.5 !text-xs w-32" value={filters.endDate} onChange={e => applyFilter('endDate', e.target.value)} />
-        <input className="input !py-1.5 !text-xs flex-1 min-w-32" placeholder="Search…" value={filters.search} onChange={e => applyFilter('search', e.target.value)} />
-        <select className="input !py-1.5 !text-xs w-36" value={filters.categoryIds[0] || ''} onChange={e => applyFilter('categoryIds', e.target.value ? [Number(e.target.value)] : [])}>
-          <option value="">All categories</option>
-          {categories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
-        </select>
-        <input type="number" className="input !py-1.5 !text-xs w-24" placeholder="Min" value={filters.minAmount} onChange={e => applyFilter('minAmount', e.target.value)} />
-        <input type="number" className="input !py-1.5 !text-xs w-24" placeholder="Max" value={filters.maxAmount} onChange={e => applyFilter('maxAmount', e.target.value)} />
-        <select className="input !py-1.5 !text-xs w-36" value={`${filters.sortBy}_${filters.sortDir}`} onChange={e => { const [by, dir] = e.target.value.split('_'); applyFilter('sortBy', by); applyFilter('sortDir', dir); }}>
-          <option value="date_DESC">Newest first</option>
-          <option value="date_ASC">Oldest first</option>
-          <option value="amount_DESC">Amount ↓</option>
-          <option value="amount_ASC">Amount ↑</option>
-        </select>
-        <button onClick={clearFilters} className="btn-secondary !py-1.5 !px-2.5 !text-xs shrink-0">Clear</button>
-        <button onClick={handleExport} className="btn-secondary !py-1.5 !px-2.5 !text-xs shrink-0"><Download size={11} /> CSV</button>
-        <span className="text-xs text-gray-400 dark:text-slate-500 ml-auto shrink-0">{total} rows</span>
+      <div className="card px-3 py-2.5 flex flex-wrap items-end gap-2">
+        {[
+          <div key="from" className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">From</span>
+            <input type="date" className="input !py-1.5 !text-xs w-32" value={filters.startDate} onChange={e => applyFilter('startDate', e.target.value)} />
+          </div>,
+          <div key="to" className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">To</span>
+            <input type="date" className="input !py-1.5 !text-xs w-32" value={filters.endDate} onChange={e => applyFilter('endDate', e.target.value)} />
+          </div>,
+          <div key="search" className="flex flex-col gap-0.5 flex-1 min-w-32">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">Search</span>
+            <input className="input !py-1.5 !text-xs" placeholder="description, notes…" value={filters.search} onChange={e => applyFilter('search', e.target.value)} />
+          </div>,
+          <div key="cat" className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">Category</span>
+            <select className="input !py-1.5 !text-xs w-36" value={filters.categoryIds[0] || ''} onChange={e => applyFilter('categoryIds', e.target.value ? [Number(e.target.value)] : [])}>
+              <option value="">All categories</option>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+            </select>
+          </div>,
+          <div key="min" className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">Min</span>
+            <input type="number" className="input !py-1.5 !text-xs w-24" placeholder="0" value={filters.minAmount} onChange={e => applyFilter('minAmount', e.target.value)} />
+          </div>,
+          <div key="max" className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">Max</span>
+            <input type="number" className="input !py-1.5 !text-xs w-24" placeholder="∞" value={filters.maxAmount} onChange={e => applyFilter('maxAmount', e.target.value)} />
+          </div>,
+          <div key="sort" className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">Sort</span>
+            <select className="input !py-1.5 !text-xs w-36" value={`${filters.sortBy}_${filters.sortDir}`} onChange={e => { const [by, dir] = e.target.value.split('_'); applyFilter('sortBy', by); applyFilter('sortDir', dir); }}>
+              <option value="date_DESC">Newest first</option>
+              <option value="date_ASC">Oldest first</option>
+              <option value="amount_DESC">Amount ↓</option>
+              <option value="amount_ASC">Amount ↑</option>
+            </select>
+          </div>,
+        ]}
+        <div className="flex items-center gap-2 ml-auto">
+          <button onClick={clearFilters} className="btn-secondary !py-1.5 !px-2.5 !text-xs">Clear</button>
+          <button onClick={handleExport} className="btn-secondary !py-1.5 !px-2.5 !text-xs"><Download size={11} /> CSV</button>
+          <span className="text-xs text-gray-400 dark:text-slate-500">{total} rows</span>
+        </div>
       </div>
 
       {/* Bulk bar */}
