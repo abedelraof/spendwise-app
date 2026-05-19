@@ -2,12 +2,33 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { decrypt } = require('./cryptoService');
 const { todayISO, yesterdayISO } = require('../utils/dateUtils');
 
-function buildParsePrompt(userCurrency) {
+function buildParsePrompt(userCurrency, categories = []) {
   const today = todayISO();
   const yesterday = yesterdayISO();
+
+  const userCategoryList = categories.map(c => {
+    const subs = (c.subcategories || []).map(s => s.name).join(', ');
+    return `  - "${c.name}"${subs ? ` → subcategories: ${subs}` : ''}`;
+  }).join('\n');
+
+  const userCategoryNames = categories.map(c => c.name);
+
   return `You are an expert expense parsing assistant. Extract ALL expenses from the user's input and return ONLY a JSON array — no markdown, no explanation, no code fences.
 
 Today's date is ${today}. Yesterday was ${yesterday}. User's preferred currency: ${userCurrency}.
+
+## ⚠️ RULE #1 — Match User's Own Categories First (HIGHEST PRIORITY)
+The user has created these custom categories. If any word or phrase in the expense line exactly matches (case-insensitive) one of these category names, assign that category name directly — do NOT remap it using the generic mapping below.
+
+${userCategoryList}
+
+Examples using the user's categories:
+- "Personal 400" → if "Personal" is a user category, then category="Personal", subcategory=""
+- "Food 200" → if "Food" is a user category, then category="Food"
+- "Personal Coffee 50" → if "Personal" is a user category, category="Personal", subcategory="Coffee"; if NOT a user category, fall back to category="Food", subcategory="Coffee"
+
+The user's valid category names are: ${JSON.stringify(userCategoryNames)}
+The category field in your output MUST be one of these exact strings (case-sensitive as listed).
 
 ## Input Formats You Must Handle
 
@@ -30,35 +51,33 @@ When amounts are written as addition: "200+32.35+76.69" or "795+230":
 - All entries share the same category and date from that line.
 - NEVER sum them. Example: "Transportation: 200+32.35+76" → 3 separate expenses of 200, 32.35, and 76.
 
-## Category Mapping
-Map informal names to these exact categories. Use your best judgment:
-- Food: dining out, food, restaurant, cafe, coffee, drinks, meal, takeaway, pizza, subway, watermelon, sweets, food and sweets, costa coffee, dunkin
-- Health: pharmacy, medicine, doctor visit, doctor, medical, medical analysis, analysis
-- Shopping: personal (when no other category fits), kids clothes, clothes, computer stuff, electronics, accessories
-- Housing: rent, hotel, personal hotel, electricity, internet
-- Entertainment: gifts, kids gifts, my kids gifts
-- Transport: transportation, uber, taxi, metro, bus, fuel
-- Education: course, tuition, books
-- Utilities: mobile bill, subscriptions
-- Other: support (e.g. "Mohammed Support"), transfers, anything unclear
+## Fallback Category Mapping (use ONLY when no user category matches the input)
+Map informal names to the closest user category. Use your best judgment:
+- Food-related: dining out, restaurant, cafe, coffee, drinks, meal, takeaway, pizza, watermelon, sweets, costa coffee, dunkin
+- Health-related: pharmacy, medicine, doctor visit, medical, analysis
+- Shopping-related: clothes, computer stuff, electronics, accessories, kids clothes
+- Housing-related: rent, hotel, electricity, internet, gas bill
+- Entertainment-related: gifts, kids gifts, movies, games, streaming
+- Transport-related: transportation, uber, taxi, metro, bus, fuel
+- Education-related: course, tuition, books, stationery
+- Utilities-related: mobile bill, subscriptions
+- Other: support, transfers, anything unclear
 
-## Subcategory hints
-- "Personal Coffee" → category=Food, subcategory=Coffee
-- "Personal Dining Out" → category=Food, subcategory=Dining Out
-- "Personal Doctor Visit" or "Personal Medical Analysis" → category=Health, subcategory=Doctor / Medical Analysis
-- "Personal Hotel" → category=Housing, subcategory=Hotel
-- "Personal Computer Stuff" → category=Shopping, subcategory=Electronics
-- "Personal" alone → category=Shopping, subcategory=Personal
+## Subcategory hints (apply after category is resolved)
+- "X Coffee" → subcategory=Coffee
+- "X Dining Out" → subcategory=Dining Out
+- "X Doctor Visit" → subcategory=Doctor
+- "X Hotel" → subcategory=Hotel
 - "Mohammed Support" → category=Other, subcategory=Support, tags=support
-- "Kids Clothes" → category=Shopping, subcategory=Kids Clothes
-- "My Kids Gifts" / "Kids Gifts" → category=Entertainment, subcategory=Kids Gifts
+- "Kids Clothes" → subcategory=Kids Clothes
+- "My Kids Gifts" / "Kids Gifts" → subcategory=Kids Gifts
 
 ## Rules
 1. date → always ISO YYYY-MM-DD
 2. amount → single numeric value only (never an expression)
 3. For each "+" in an amount expression, produce a separate JSON object with that number as amount
-4. category → exactly one of: Food, Transport, Housing, Entertainment, Health, Shopping, Education, Utilities, Other
-5. description → ≤60 char human-readable label (combine category context + amount context)
+4. category → MUST be one of the user's category names listed above
+5. description → ≤60 char human-readable label
 6. raw_text → the specific line or portion that produced this expense
 7. tags → optional comma-separated tags or empty string
 8. currency → use ${userCurrency} if not specified
@@ -106,12 +125,12 @@ async function getClient(encryptedKey) {
   return new Anthropic({ apiKey });
 }
 
-async function parseExpenses(rawText, encryptedApiKey, userCurrency) {
+async function parseExpenses(rawText, encryptedApiKey, userCurrency, categories = []) {
   const client = await getClient(encryptedApiKey);
   const msg = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 8192,
-    system: buildParsePrompt(userCurrency),
+    system: buildParsePrompt(userCurrency, categories),
     messages: [{ role: 'user', content: rawText }],
   });
   return extractJson(msg.content[0].text);
