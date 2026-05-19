@@ -19,7 +19,7 @@ export default function AppShell() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-950 flex">
       {/* Desktop sidebar */}
-      <aside className="hidden lg:flex flex-col w-60 border-r border-gray-100 dark:border-slate-800 fixed inset-y-0 left-0 z-30">
+      <aside className="hidden lg:flex flex-col w-60 fixed inset-y-0 left-0 z-30">
         <Sidebar />
       </aside>
 
