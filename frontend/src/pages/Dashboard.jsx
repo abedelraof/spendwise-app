@@ -140,9 +140,6 @@ export default function Dashboard() {
         </h2>
       </div>
 
-      <StatsBar stats={stats} currency={user?.currency} netWorthData={netWorthData} />
-      <BudgetAlerts budgets={budgets} />
-      <MonthlyInsight />
       <ExpenseInputPanel
         onParse={handleParse}
         onAdd={handleManualAdd}
@@ -151,6 +148,9 @@ export default function Dashboard() {
         categories={categories}
         currency={user?.currency}
       />
+      <StatsBar stats={stats} currency={user?.currency} netWorthData={netWorthData} />
+      <BudgetAlerts budgets={budgets} />
+      <MonthlyInsight />
       <LatestTransactions expenses={expenses} onDelete={handleDelete} />
 
       {parsed && (

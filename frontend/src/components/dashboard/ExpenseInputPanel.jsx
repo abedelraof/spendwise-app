@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Sparkles, Loader2, PenLine } from 'lucide-react';
+import { Sparkles, Loader2, PenLine, Plus } from 'lucide-react';
 import TagInput from '../common/TagInput';
 
 const PLACEHOLDER = `Paste expenses in any format:
@@ -114,36 +114,46 @@ export default function ExpenseInputPanel({ onParse, onAdd, loading, saving, cat
 
   return (
     <div className="card overflow-hidden">
-      {/* Tab bar */}
-      <div className="flex border-b border-gray-100 dark:border-slate-700">
-        <button
-          onClick={() => setTab('ai')}
-          className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
-            tab === 'ai'
-              ? 'text-brand-600 dark:text-brand-400 border-b-2 border-brand-500 bg-brand-50/50 dark:bg-brand-900/10'
-              : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200'
-          }`}
-        >
-          <Sparkles size={14} /> AI Parse
-        </button>
-        <button
-          onClick={() => setTab('manual')}
-          className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
-            tab === 'manual'
-              ? 'text-brand-600 dark:text-brand-400 border-b-2 border-brand-500 bg-brand-50/50 dark:bg-brand-900/10'
-              : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200'
-          }`}
-        >
-          <PenLine size={14} /> Manual Entry
-        </button>
+      {/* Header */}
+      <div className="px-5 pt-5 pb-3 flex items-center gap-2">
+        <div className="w-7 h-7 rounded-lg bg-brand-50 dark:bg-brand-900/30 flex items-center justify-center">
+          <Plus size={14} className="text-brand-600 dark:text-brand-400" />
+        </div>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Log Expense</h3>
       </div>
 
-      <div className="p-5">
+      {/* Pill tab switcher */}
+      <div className="px-5 pb-4">
+        <div className="flex gap-1 p-1 bg-gray-100 dark:bg-slate-700/60 rounded-xl">
+          <button
+            onClick={() => setTab('ai')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              tab === 'ai'
+                ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400 shadow-sm'
+                : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200'
+            }`}
+          >
+            <Sparkles size={12} /> AI Parse
+          </button>
+          <button
+            onClick={() => setTab('manual')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              tab === 'manual'
+                ? 'bg-white dark:bg-slate-800 text-brand-600 dark:text-brand-400 shadow-sm'
+                : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200'
+            }`}
+          >
+            <PenLine size={12} /> Manual Entry
+          </button>
+        </div>
+      </div>
+
+      <div className="px-5 pb-5">
         {tab === 'ai' ? (
           <form onSubmit={handleParse} className="space-y-3">
             <textarea
               className="input resize-y font-mono text-xs leading-relaxed"
-              rows={6}
+              rows={5}
               placeholder={PLACEHOLDER}
               value={text}
               onChange={e => setText(e.target.value)}
