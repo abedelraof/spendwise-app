@@ -39,7 +39,7 @@ export default function StatCard({ icon: Icon, label, value, sub, color = 'brand
   const c = palette[color] ?? palette.brand;
 
   return (
-    <div className={`rounded-xl p-5 shadow-card animate-fade-in ${c.card}`}>
+    <div className={`rounded-xl p-5 animate-fade-in ${c.card}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className={`text-xs font-semibold uppercase tracking-widest ${c.label}`}>{label}</p>
