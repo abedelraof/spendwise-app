@@ -113,9 +113,25 @@ export default function Transactions() {
           </div>,
           <div key="cat" className="flex flex-col gap-0.5">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">Category</span>
-            <select className="input !py-1.5 !text-xs w-36" value={filters.categoryIds[0] || ''} onChange={e => applyFilter('categoryIds', e.target.value ? [Number(e.target.value)] : [])}>
+            <select
+              className="input !py-1.5 !text-xs w-40"
+              value={filters.subcategoryIds[0] ? `sub_${filters.subcategoryIds[0]}` : filters.categoryIds[0] ? `cat_${filters.categoryIds[0]}` : ''}
+              onChange={e => {
+                const val = e.target.value;
+                if (!val) { setFilters(f => ({ ...f, categoryIds: [], subcategoryIds: [] })); setPage(0); }
+                else if (val.startsWith('cat_')) { setFilters(f => ({ ...f, categoryIds: [Number(val.slice(4))], subcategoryIds: [] })); setPage(0); }
+                else { setFilters(f => ({ ...f, categoryIds: [], subcategoryIds: [Number(val.slice(4))] })); setPage(0); }
+              }}
+            >
               <option value="">All categories</option>
-              {categories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+              {categories.map(c => (
+                <optgroup key={c.id} label={`${c.icon ?? ''} ${c.name}`}>
+                  <option value={`cat_${c.id}`}>All in {c.name}</option>
+                  {(c.subcategories || []).map(s => (
+                    <option key={s.id} value={`sub_${s.id}`}>↳ {s.name}</option>
+                  ))}
+                </optgroup>
+              ))}
             </select>
           </div>,
           <div key="min" className="flex flex-col gap-0.5">
