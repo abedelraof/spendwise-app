@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Download, Trash2, Pencil, Filter, CreditCard } from 'lucide-react';
+import { Download, Trash2, Pencil, Filter, CreditCard, ChevronDown, X } from 'lucide-react';
 import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import { getExpenses, deleteExpense, bulkDeleteExpenses, updateExpense } from '../api/expensesApi';
@@ -15,6 +15,108 @@ const PAGE_SIZE = 20;
 
 function today() { return new Date().toISOString().split('T')[0]; }
 function monthStart() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`; }
+
+function CategoryPicker({ categories, categoryIds, subcategoryIds, onChange }) {
+  const [open, setOpen]     = useState(false);
+  const [search, setSearch] = useState('');
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function handleClick(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const q = search.toLowerCase();
+  const filtered = categories
+    .map(c => ({
+      ...c,
+      matchSelf: c.name.toLowerCase().includes(q),
+      subs: (c.subcategories || []).filter(s => !q || s.name.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)),
+    }))
+    .filter(c => c.matchSelf || c.subs.length > 0);
+
+  const selectedLabel = (() => {
+    if (subcategoryIds[0]) {
+      for (const c of categories) {
+        const s = (c.subcategories || []).find(s => s.id === subcategoryIds[0]);
+        if (s) return `${c.icon ?? ''} ${c.name} › ${s.name}`;
+      }
+    }
+    if (categoryIds[0]) {
+      const c = categories.find(c => c.id === categoryIds[0]);
+      return c ? `${c.icon ?? ''} ${c.name}` : '';
+    }
+    return null;
+  })();
+
+  function select(catId, subId) {
+    onChange(catId, subId);
+    setOpen(false);
+    setSearch('');
+  }
+
+  return (
+    <div ref={ref} className="relative flex flex-col gap-0.5">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">Category</span>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="input !py-1.5 !text-xs w-44 flex items-center justify-between gap-1 text-left"
+      >
+        <span className="truncate">{selectedLabel ?? <span className="text-gray-400 dark:text-slate-500">All categories</span>}</span>
+        <div className="flex items-center gap-0.5 shrink-0">
+          {selectedLabel && (
+            <span onMouseDown={e => { e.stopPropagation(); select(null, null); }}
+              className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-400">
+              <X size={10} />
+            </span>
+          )}
+          <ChevronDown size={11} className="text-gray-400" />
+        </div>
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 mt-1 w-56 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-lg z-50 overflow-hidden">
+          <div className="p-2 border-b border-gray-100 dark:border-slate-700">
+            <input
+              autoFocus
+              className="input !py-1 !text-xs w-full"
+              placeholder="Search categories…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="max-h-56 overflow-y-auto py-1">
+            {!search && (
+              <button onClick={() => select(null, null)}
+                className="w-full text-left px-3 py-1.5 text-xs text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700/60">
+                All categories
+              </button>
+            )}
+            {filtered.map(c => (
+              <div key={c.id}>
+                <button onClick={() => select(c.id, null)}
+                  className="w-full text-left px-3 py-1.5 text-xs font-medium text-gray-800 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700/60 flex items-center gap-1.5">
+                  <span>{c.icon}</span>{c.name}
+                </button>
+                {c.subs.map(s => (
+                  <button key={s.id} onClick={() => select(null, s.id)}
+                    className="w-full text-left pl-7 pr-3 py-1.5 text-xs text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700/60">
+                    ↳ {s.name}
+                  </button>
+                ))}
+              </div>
+            ))}
+            {filtered.length === 0 && (
+              <p className="px-3 py-3 text-xs text-gray-400 dark:text-slate-500 text-center">No matches</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Transactions() {
   const api = useApi();
@@ -111,29 +213,16 @@ export default function Transactions() {
             <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">Search</span>
             <input className="input !py-1.5 !text-xs" placeholder="description, notes…" value={filters.search} onChange={e => applyFilter('search', e.target.value)} />
           </div>,
-          <div key="cat" className="flex flex-col gap-0.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">Category</span>
-            <select
-              className="input !py-1.5 !text-xs w-40"
-              value={filters.subcategoryIds[0] ? `sub_${filters.subcategoryIds[0]}` : filters.categoryIds[0] ? `cat_${filters.categoryIds[0]}` : ''}
-              onChange={e => {
-                const val = e.target.value;
-                if (!val) { setFilters(f => ({ ...f, categoryIds: [], subcategoryIds: [] })); setPage(0); }
-                else if (val.startsWith('cat_')) { setFilters(f => ({ ...f, categoryIds: [Number(val.slice(4))], subcategoryIds: [] })); setPage(0); }
-                else { setFilters(f => ({ ...f, categoryIds: [], subcategoryIds: [Number(val.slice(4))] })); setPage(0); }
-              }}
-            >
-              <option value="">All categories</option>
-              {categories.map(c => (
-                <optgroup key={c.id} label={`${c.icon ?? ''} ${c.name}`}>
-                  <option value={`cat_${c.id}`}>All in {c.name}</option>
-                  {(c.subcategories || []).map(s => (
-                    <option key={s.id} value={`sub_${s.id}`}>↳ {s.name}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </div>,
+          <CategoryPicker
+            key="cat"
+            categories={categories}
+            categoryIds={filters.categoryIds}
+            subcategoryIds={filters.subcategoryIds}
+            onChange={(catId, subId) => {
+              setFilters(f => ({ ...f, categoryIds: catId ? [catId] : [], subcategoryIds: subId ? [subId] : [] }));
+              setPage(0);
+            }}
+          />,
           <div key="min" className="flex flex-col gap-0.5">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">Min</span>
             <input type="number" className="input !py-1.5 !text-xs w-24" placeholder="0" value={filters.minAmount} onChange={e => applyFilter('minAmount', e.target.value)} />
