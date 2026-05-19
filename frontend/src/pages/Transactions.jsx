@@ -97,61 +97,26 @@ export default function Transactions() {
   return (
     <div className="space-y-4 animate-fade-in">
       {/* Filters */}
-      <div className="card p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <Filter size={14} className="text-gray-400" />
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Filters</span>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-4">
-          <div>
-            <label className="label">From</label>
-            <input type="date" className="input" value={filters.startDate} onChange={e => applyFilter('startDate', e.target.value)} />
-          </div>
-          <div>
-            <label className="label">To</label>
-            <input type="date" className="input" value={filters.endDate} onChange={e => applyFilter('endDate', e.target.value)} />
-          </div>
-          <div>
-            <label className="label">Search</label>
-            <input className="input" placeholder="description, notes…" value={filters.search}
-              onChange={e => applyFilter('search', e.target.value)} />
-          </div>
-          <div>
-            <label className="label">Category</label>
-            <select className="input" value={filters.categoryIds[0] || ''}
-              onChange={e => applyFilter('categoryIds', e.target.value ? [Number(e.target.value)] : [])}>
-              <option value="">All categories</option>
-              {categories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="label">Min amount</label>
-            <input type="number" className="input" placeholder="0" value={filters.minAmount}
-              onChange={e => applyFilter('minAmount', e.target.value)} />
-          </div>
-          <div>
-            <label className="label">Max amount</label>
-            <input type="number" className="input" value={filters.maxAmount}
-              onChange={e => applyFilter('maxAmount', e.target.value)} />
-          </div>
-          <div>
-            <label className="label">Sort by</label>
-            <select className="input" value={`${filters.sortBy}_${filters.sortDir}`}
-              onChange={e => { const [by, dir] = e.target.value.split('_'); applyFilter('sortBy', by); applyFilter('sortDir', dir); }}>
-              <option value="date_DESC">Date (newest)</option>
-              <option value="date_ASC">Date (oldest)</option>
-              <option value="amount_DESC">Amount ↓</option>
-              <option value="amount_ASC">Amount ↑</option>
-            </select>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={clearFilters} className="btn-secondary text-xs py-1.5 px-3">Clear filters</button>
-          <button onClick={handleExport} className="btn-secondary text-xs py-1.5 px-3">
-            <Download size={12} /> Export CSV
-          </button>
-          <span className="text-xs text-gray-400 dark:text-slate-500 ml-auto">{total} transactions</span>
-        </div>
+      <div className="card px-3 py-2.5 flex flex-wrap items-center gap-2">
+        <Filter size={13} className="text-gray-400 shrink-0" />
+        <input type="date" className="input !py-1.5 !text-xs w-32" value={filters.startDate} onChange={e => applyFilter('startDate', e.target.value)} />
+        <input type="date" className="input !py-1.5 !text-xs w-32" value={filters.endDate} onChange={e => applyFilter('endDate', e.target.value)} />
+        <input className="input !py-1.5 !text-xs flex-1 min-w-32" placeholder="Search…" value={filters.search} onChange={e => applyFilter('search', e.target.value)} />
+        <select className="input !py-1.5 !text-xs w-36" value={filters.categoryIds[0] || ''} onChange={e => applyFilter('categoryIds', e.target.value ? [Number(e.target.value)] : [])}>
+          <option value="">All categories</option>
+          {categories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+        </select>
+        <input type="number" className="input !py-1.5 !text-xs w-24" placeholder="Min" value={filters.minAmount} onChange={e => applyFilter('minAmount', e.target.value)} />
+        <input type="number" className="input !py-1.5 !text-xs w-24" placeholder="Max" value={filters.maxAmount} onChange={e => applyFilter('maxAmount', e.target.value)} />
+        <select className="input !py-1.5 !text-xs w-36" value={`${filters.sortBy}_${filters.sortDir}`} onChange={e => { const [by, dir] = e.target.value.split('_'); applyFilter('sortBy', by); applyFilter('sortDir', dir); }}>
+          <option value="date_DESC">Newest first</option>
+          <option value="date_ASC">Oldest first</option>
+          <option value="amount_DESC">Amount ↓</option>
+          <option value="amount_ASC">Amount ↑</option>
+        </select>
+        <button onClick={clearFilters} className="btn-secondary !py-1.5 !px-2.5 !text-xs shrink-0">Clear</button>
+        <button onClick={handleExport} className="btn-secondary !py-1.5 !px-2.5 !text-xs shrink-0"><Download size={11} /> CSV</button>
+        <span className="text-xs text-gray-400 dark:text-slate-500 ml-auto shrink-0">{total} rows</span>
       </div>
 
       {/* Bulk bar */}

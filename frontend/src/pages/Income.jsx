@@ -195,40 +195,17 @@ export default function Income() {
       </div>
 
       {/* Filters */}
-      <div className="card p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <Filter size={14} className="text-gray-400" />
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Filters</span>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <div>
-            <label className="label">From</label>
-            <input type="date" className="input" value={filters.startDate}
-              onChange={e => applyFilter('startDate', e.target.value)} />
-          </div>
-          <div>
-            <label className="label">To</label>
-            <input type="date" className="input" value={filters.endDate}
-              onChange={e => applyFilter('endDate', e.target.value)} />
-          </div>
-          <div>
-            <label className="label">Source</label>
-            <select className="input" value={filters.source}
-              onChange={e => applyFilter('source', e.target.value)}>
-              <option value="">All sources</option>
-              {SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="label">Search</label>
-            <input className="input" placeholder="description, notes…"
-              value={filters.search} onChange={e => applyFilter('search', e.target.value)} />
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={clearFilters} className="btn-secondary text-xs py-1.5 px-3">Clear filters</button>
-          <span className="text-xs text-gray-400 dark:text-slate-500 ml-auto">{total} records</span>
-        </div>
+      <div className="card px-3 py-2.5 flex flex-wrap items-center gap-2">
+        <Filter size={13} className="text-gray-400 shrink-0" />
+        <input type="date" className="input !py-1.5 !text-xs w-32" value={filters.startDate} onChange={e => applyFilter('startDate', e.target.value)} />
+        <input type="date" className="input !py-1.5 !text-xs w-32" value={filters.endDate} onChange={e => applyFilter('endDate', e.target.value)} />
+        <select className="input !py-1.5 !text-xs w-36" value={filters.source} onChange={e => applyFilter('source', e.target.value)}>
+          <option value="">All sources</option>
+          {SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <input className="input !py-1.5 !text-xs flex-1 min-w-32" placeholder="Search…" value={filters.search} onChange={e => applyFilter('search', e.target.value)} />
+        <button onClick={clearFilters} className="btn-secondary !py-1.5 !px-2.5 !text-xs shrink-0">Clear</button>
+        <span className="text-xs text-gray-400 dark:text-slate-500 ml-auto shrink-0">{total} records</span>
       </div>
 
       {/* Table */}

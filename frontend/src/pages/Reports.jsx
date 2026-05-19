@@ -3,7 +3,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
   LineChart, Line, PieChart, Pie, CartesianGrid,
 } from 'recharts';
-import { Download } from 'lucide-react';
+import { Download, Filter } from 'lucide-react';
 import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import { getSpendingTrend, getCategoryBreakdown, getTopDays, exportCsv } from '../api/reportsApi';
@@ -106,23 +106,18 @@ export default function Reports() {
   return (
     <div className="space-y-5 animate-fade-in">
       {/* Filter bar */}
-      <div className="card p-4 flex flex-wrap gap-3 items-end">
-        <div>
-          <label className="label">From</label>
-          <input type="date" className="input" value={startDate} onChange={e => setStartDate(e.target.value)} />
-        </div>
-        <div>
-          <label className="label">To</label>
-          <input type="date" className="input" value={endDate} onChange={e => setEndDate(e.target.value)} />
-        </div>
-        <div className="ml-auto flex items-center gap-4">
+      <div className="card px-3 py-2.5 flex flex-wrap items-center gap-2">
+        <Filter size={13} className="text-gray-400 shrink-0" />
+        <input type="date" className="input !py-1.5 !text-xs w-32" value={startDate} onChange={e => setStartDate(e.target.value)} />
+        <input type="date" className="input !py-1.5 !text-xs w-32" value={endDate} onChange={e => setEndDate(e.target.value)} />
+        <div className="ml-auto flex items-center gap-3">
           {!loading && totalSpent > 0 && (
             <span className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
               {fmt(totalSpent)} <span className="text-xs font-normal text-gray-400">{currency}</span>
             </span>
           )}
-          <button onClick={handleExport} className="btn-secondary">
-            <Download size={14} /> Export CSV
+          <button onClick={handleExport} className="btn-secondary !py-1.5 !px-2.5 !text-xs">
+            <Download size={11} /> CSV
           </button>
         </div>
       </div>
