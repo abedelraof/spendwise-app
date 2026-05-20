@@ -163,6 +163,7 @@ function RecordModal({ accounts, rates, homeCurrency, onSave, onClose }) {
       return [a.id, a.latest_balance != null ? String(a.latest_balance) : ''];
     }))
   );
+  const [recordedDate, setRecordedDate] = useState(today());
   const [notes,  setNotes]  = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -192,14 +193,21 @@ function RecordModal({ accounts, rates, homeCurrency, onSave, onClose }) {
     if (!entries.length) return showToast('Enter at least one balance', 'warning');
     setSaving(true);
     try {
-      await onSave({ entries, recordedDate: today(), notes: notes.trim() || undefined });
+      await onSave({ entries, recordedDate, notes: notes.trim() || undefined });
       onClose();
     } finally { setSaving(false); }
   }
 
   return (
-    <Modal open onClose={onClose} title={`Record Balances — ${today()}`} size="lg">
+    <Modal open onClose={onClose} size="lg" hideHeader>
       <form onSubmit={handleSubmit} className="space-y-4">
+
+        {/* Date row */}
+        <div className="flex items-center gap-3">
+          <label className="text-sm font-semibold text-gray-900 dark:text-white shrink-0">Snapshot Date</label>
+          <input type="date" className="input flex-1" value={recordedDate}
+            onChange={e => setRecordedDate(e.target.value)} />
+        </div>
 
         {/* Scrollable accounts grid */}
         <div className="max-h-[60vh] overflow-y-auto -mx-1 px-1">
