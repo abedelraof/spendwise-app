@@ -21,6 +21,7 @@ services:
       PORT: 3001
       JWT_SECRET: ${JWT_SECRET}
       DATABASE_URL: postgresql://expensebeam:${DB_PASSWORD}@db:5432/expensebeam
+      DATABASE_SSL: "false"
       CORS_ORIGIN: https://${DOMAIN}
     depends_on:
       db:
