@@ -12,14 +12,14 @@ router.post('/signup', async (req, res, next) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
-    if (userModel.findByEmail(email)) return res.status(409).json({ error: 'Email already registered' });
+    if (await userModel.findByEmail(email)) return res.status(409).json({ error: 'Email already registered' });
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const result = userModel.createUser({ email, passwordHash });
+    const result = await userModel.createUser({ email, passwordHash });
     const userId = result.lastInsertRowid;
-    seedDefaults(userId);
+    await seedDefaults(userId);
 
-    const user = userModel.findById(userId);
+    const user = await userModel.findById(userId);
     const token = makeToken(user);
     res.status(201).json({ token, user: { id: user.id, email: user.email, currency: user.currency, theme: user.theme } });
   } catch (err) { next(err); }
@@ -30,7 +30,7 @@ router.post('/login', async (req, res, next) => {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
 
-    const user = userModel.findByEmail(email);
+    const user = await userModel.findByEmail(email);
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
     const valid = await bcrypt.compare(password, user.password_hash);

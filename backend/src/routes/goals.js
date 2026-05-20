@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const auth   = require('../middleware/auth');
-const db     = require('../db/database');
+const { query, execute } = require('../db/database');
 
 const GOAL_SQL = `
   SELECT g.*,
@@ -13,52 +13,60 @@ const GOAL_SQL = `
     WHERE account_id = g.account_id
     ORDER BY recorded_date DESC, created_at DESC LIMIT 1
   )
-  WHERE g.user_id = ?
+  WHERE g.user_id = $1
   ORDER BY g.created_at
 `;
 
-const list = (userId) => db.prepare(GOAL_SQL).all(userId);
+const list = (userId) => query(GOAL_SQL, [userId]);
 
-router.get('/', auth, (req, res) => {
-  res.json({ goals: list(req.user.userId) });
+router.get('/', auth, async (req, res, next) => {
+  try {
+    res.json({ goals: await list(req.user.userId) });
+  } catch (err) { next(err); }
 });
 
-router.post('/', auth, (req, res, next) => {
+router.post('/', auth, async (req, res, next) => {
   try {
     const { name, icon = '🎯', target_amount, target_currency = 'EGP',
             account_id = null, current_amount = 0, target_date = null } = req.body;
-    if (!name?.trim())             return res.status(400).json({ error: 'name is required' });
-    if (!(target_amount > 0))      return res.status(400).json({ error: 'target_amount must be positive' });
-    db.prepare(`
-      INSERT INTO savings_goals (user_id, account_id, name, icon, target_amount, target_currency, current_amount, target_date)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(req.user.userId, account_id, name.trim(), icon, target_amount, target_currency, current_amount, target_date);
-    res.status(201).json({ goals: list(req.user.userId) });
+    if (!name?.trim())        return res.status(400).json({ error: 'name is required' });
+    if (!(target_amount > 0)) return res.status(400).json({ error: 'target_amount must be positive' });
+    await execute(
+      `INSERT INTO savings_goals (user_id, account_id, name, icon, target_amount, target_currency, current_amount, target_date)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [req.user.userId, account_id, name.trim(), icon, target_amount, target_currency, current_amount, target_date]
+    );
+    res.status(201).json({ goals: await list(req.user.userId) });
   } catch (err) { next(err); }
 });
 
-router.put('/:id', auth, (req, res, next) => {
+router.put('/:id', auth, async (req, res, next) => {
   try {
     const { name, icon, target_amount, target_currency, account_id, current_amount, target_date } = req.body;
-    const fields = []; const vals = [];
-    if (name            !== undefined) { fields.push('name = ?');            vals.push(name.trim()); }
-    if (icon            !== undefined) { fields.push('icon = ?');            vals.push(icon); }
-    if (target_amount   !== undefined) { fields.push('target_amount = ?');   vals.push(target_amount); }
-    if (target_currency !== undefined) { fields.push('target_currency = ?'); vals.push(target_currency); }
-    if (account_id      !== undefined) { fields.push('account_id = ?');      vals.push(account_id); }
-    if (current_amount  !== undefined) { fields.push('current_amount = ?');  vals.push(current_amount); }
-    if (target_date     !== undefined) { fields.push('target_date = ?');     vals.push(target_date ?? null); }
+    const fields = []; const vals = []; let idx = 1;
+    if (name            !== undefined) { fields.push(`name = $${idx++}`);            vals.push(name.trim()); }
+    if (icon            !== undefined) { fields.push(`icon = $${idx++}`);            vals.push(icon); }
+    if (target_amount   !== undefined) { fields.push(`target_amount = $${idx++}`);   vals.push(target_amount); }
+    if (target_currency !== undefined) { fields.push(`target_currency = $${idx++}`); vals.push(target_currency); }
+    if (account_id      !== undefined) { fields.push(`account_id = $${idx++}`);      vals.push(account_id); }
+    if (current_amount  !== undefined) { fields.push(`current_amount = $${idx++}`);  vals.push(current_amount); }
+    if (target_date     !== undefined) { fields.push(`target_date = $${idx++}`);     vals.push(target_date ?? null); }
     if (fields.length) {
       vals.push(req.params.id, req.user.userId);
-      db.prepare(`UPDATE savings_goals SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`).run(...vals);
+      await execute(
+        `UPDATE savings_goals SET ${fields.join(', ')} WHERE id = $${idx++} AND user_id = $${idx}`,
+        vals
+      );
     }
-    res.json({ goals: list(req.user.userId) });
+    res.json({ goals: await list(req.user.userId) });
   } catch (err) { next(err); }
 });
 
-router.delete('/:id', auth, (req, res) => {
-  db.prepare('DELETE FROM savings_goals WHERE id = ? AND user_id = ?').run(req.params.id, req.user.userId);
-  res.json({ success: true });
+router.delete('/:id', auth, async (req, res, next) => {
+  try {
+    await execute('DELETE FROM savings_goals WHERE id = $1 AND user_id = $2', [req.params.id, req.user.userId]);
+    res.json({ success: true });
+  } catch (err) { next(err); }
 });
 
 module.exports = router;
