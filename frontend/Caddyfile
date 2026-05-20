@@ -1,7 +1,13 @@
 {$DOMAIN} {
-    root * /srv
-    try_files {path} /index.html
-    file_server
+    # API requests go to the backend first
+    handle /api/* {
+        reverse_proxy backend:3001
+    }
 
-    reverse_proxy /api/* backend:3001
+    # Everything else serves the React SPA
+    handle {
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
 }
