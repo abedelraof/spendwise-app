@@ -166,6 +166,9 @@ function RecordModal({ accounts, rates, homeCurrency, onSave, onClose }) {
   const [recordedDate, setRecordedDate] = useState(today());
   const [notes,  setNotes]  = useState('');
   const [saving, setSaving] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
+
+  function requestClose() { setConfirmClose(true); }
 
   function setQty(id, val)  { setValues(v => ({ ...v, [id]: { ...v[id], quantity:     val } })); }
   function setPpu(id, val)  { setValues(v => ({ ...v, [id]: { ...v[id], pricePerUnit: val } })); }
@@ -199,7 +202,7 @@ function RecordModal({ accounts, rates, homeCurrency, onSave, onClose }) {
   }
 
   return (
-    <Modal open onClose={onClose} size="lg" hideHeader>
+    <Modal open onClose={requestClose} size="lg" hideHeader>
       <form onSubmit={handleSubmit} className="space-y-4">
 
         {/* Date row */}
@@ -264,12 +267,22 @@ function RecordModal({ accounts, rates, homeCurrency, onSave, onClose }) {
             value={notes} onChange={e => setNotes(e.target.value)} />
         </div>
 
-        <div className="flex gap-3">
-          <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-          <button type="submit" disabled={saving} className="btn-primary flex-1">
-            {saving ? 'Saving…' : 'Save Balances'}
-          </button>
-        </div>
+        {confirmClose ? (
+          <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40">
+            <p className="flex-1 text-sm text-amber-800 dark:text-amber-300 font-medium">Discard unsaved balances?</p>
+            <button type="button" onClick={() => setConfirmClose(false)}
+              className="btn-secondary text-xs px-3 py-1.5">Keep editing</button>
+            <button type="button" onClick={onClose}
+              className="btn-danger text-xs px-3 py-1.5">Discard</button>
+          </div>
+        ) : (
+          <div className="flex gap-3">
+            <button type="button" onClick={requestClose} className="btn-secondary flex-1">Cancel</button>
+            <button type="submit" disabled={saving} className="btn-primary flex-1">
+              {saving ? 'Saving…' : 'Save Balances'}
+            </button>
+          </div>
+        )}
       </form>
     </Modal>
   );
