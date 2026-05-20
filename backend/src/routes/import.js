@@ -14,7 +14,8 @@ router.post('/preview', auth, upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'CSV file required' });
 
-    const user = userModel.findById(req.user.userId);
+    const user = await userModel.findById(req.user.userId);
+    if (!user) return res.status(401).json({ error: 'User not found' });
     const records = parse(req.file.buffer, { columns: true, skip_empty_lines: true });
     if (!records.length) return res.status(400).json({ error: 'CSV file is empty' });
 
@@ -36,22 +37,21 @@ router.post('/preview', auth, upload.single('file'), async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/confirm', auth, (req, res, next) => {
+router.post('/confirm', auth, async (req, res, next) => {
   try {
     const { rows, mapping } = req.body;
-    if (!rows?.length || !mapping?.amount) {
+    if (!rows?.length || !mapping?.amount)
       return res.status(400).json({ error: 'rows and mapping.amount are required' });
-    }
 
     const userId = req.user.userId;
     let created = 0, skipped = 0;
-
     const expenses = [];
+
     for (const row of rows) {
       const rawAmount = parseFloat(row[mapping.amount]);
       if (!rawAmount || rawAmount <= 0) { skipped++; continue; }
 
-      const { category_id, subcategory_id } = matchOrCreateCategory(
+      const { category_id, subcategory_id } = await matchOrCreateCategory(
         userId,
         mapping.category ? row[mapping.category] : 'Other',
         null
@@ -68,7 +68,7 @@ router.post('/confirm', auth, (req, res, next) => {
       created++;
     }
 
-    if (expenses.length) expenseModel.insertMany(userId, expenses);
+    if (expenses.length) await expenseModel.insertMany(userId, expenses);
     res.json({ created, skipped });
   } catch (err) { next(err); }
 });

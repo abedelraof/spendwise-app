@@ -1,4 +1,4 @@
-const db = require('../db/database');
+const { query, queryOne, execute, pool } = require('../db/database');
 
 const DEFAULTS = [
   { name: 'Food',          icon: '🍔', color: '#f97316', subs: ['Lunch','Dinner','Breakfast','Groceries','Coffee','Snacks','Delivery'] },
@@ -12,29 +12,70 @@ const DEFAULTS = [
   { name: 'Other',         icon: '📦', color: '#6b7280', subs: ['Miscellaneous'] },
 ];
 
-const seedDefaults = db.transaction((userId) => {
-  const insertCat = db.prepare('INSERT OR IGNORE INTO categories (user_id, name, icon, color, is_default) VALUES (?, ?, ?, ?, 1)');
-  const insertSub = db.prepare('INSERT OR IGNORE INTO subcategories (category_id, user_id, name) VALUES (?, ?, ?)');
-  for (const cat of DEFAULTS) {
-    insertCat.run(userId, cat.name, cat.icon, cat.color);
-    const row = db.prepare('SELECT id FROM categories WHERE user_id = ? AND name = ?').get(userId, cat.name);
-    for (const sub of cat.subs) insertSub.run(row.id, userId, sub);
+const seedDefaults = async (userId) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const cat of DEFAULTS) {
+      await client.query(
+        `INSERT INTO categories (user_id, name, icon, color, is_default)
+         VALUES ($1, $2, $3, $4, 1) ON CONFLICT (user_id, name) DO NOTHING`,
+        [userId, cat.name, cat.icon, cat.color]
+      );
+      const row = await client.query(
+        'SELECT id FROM categories WHERE user_id = $1 AND name = $2',
+        [userId, cat.name]
+      );
+      const catId = row.rows[0]?.id;
+      if (catId) {
+        for (const sub of cat.subs) {
+          await client.query(
+            `INSERT INTO subcategories (category_id, user_id, name)
+             VALUES ($1, $2, $3) ON CONFLICT (category_id, name) DO NOTHING`,
+            [catId, userId, sub]
+          );
+        }
+      }
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
   }
-});
+};
 
-const findByUser = (userId) => {
-  const cats = db.prepare('SELECT * FROM categories WHERE user_id = ? ORDER BY is_default DESC, name').all(userId);
-  const subs = db.prepare('SELECT * FROM subcategories WHERE user_id = ? ORDER BY name').all(userId);
+const findByUser = async (userId) => {
+  const cats = await query(
+    'SELECT * FROM categories WHERE user_id = $1 ORDER BY is_default DESC, name',
+    [userId]
+  );
+  const subs = await query(
+    'SELECT * FROM subcategories WHERE user_id = $1 ORDER BY name',
+    [userId]
+  );
   return cats.map(c => ({ ...c, subcategories: subs.filter(s => s.category_id === c.id) }));
 };
 
 const findByName = (userId, name) =>
-  db.prepare('SELECT * FROM categories WHERE user_id = ? AND name = ? COLLATE NOCASE').get(userId, name);
+  queryOne(
+    'SELECT * FROM categories WHERE user_id = $1 AND LOWER(name) = LOWER($2)',
+    [userId, name]
+  );
 
-const create = (userId, { name, icon, color }) =>
-  db.prepare('INSERT INTO categories (user_id, name, icon, color) VALUES (?, ?, ?, ?)').run(userId, name, icon || '📦', color || '#6b7280');
+const create = async (userId, { name, icon, color }) => {
+  const row = await queryOne(
+    'INSERT INTO categories (user_id, name, icon, color) VALUES ($1, $2, $3, $4) RETURNING id',
+    [userId, name, icon || '📦', color || '#6b7280']
+  );
+  return { lastInsertRowid: row.id };
+};
 
 const remove = (userId, id) =>
-  db.prepare('DELETE FROM categories WHERE id = ? AND user_id = ? AND is_default = 0').run(id, userId);
+  execute(
+    'DELETE FROM categories WHERE id = $1 AND user_id = $2 AND is_default = 0',
+    [id, userId]
+  );
 
 module.exports = { seedDefaults, findByUser, findByName, create, remove };
