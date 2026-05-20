@@ -14,7 +14,7 @@ export default function TagInput({ value = '', onChange }) {
   const removeTag = (tag) => onChange(tags.filter(t => t !== tag).join(','));
 
   return (
-    <div className="flex flex-wrap gap-1 items-center border border-gray-200 dark:border-slate-600 rounded-xl px-2 py-1.5 bg-white dark:bg-slate-900/50 min-h-[40px]">
+    <div className="flex flex-wrap gap-1 items-center border border-gray-200 dark:border-slate-600 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-900 min-h-[36px]">
       {tags.map(tag => (
         <span key={tag} className="flex items-center gap-1 bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 text-xs px-2.5 py-0.5 rounded-full font-medium">
           #{tag}

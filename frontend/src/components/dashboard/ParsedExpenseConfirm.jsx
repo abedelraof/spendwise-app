@@ -1,88 +1,308 @@
 import { useState } from 'react';
+import { CheckCircle2, ChevronRight, Trash2, CheckCheck } from 'lucide-react';
 import Modal from '../common/Modal';
 import TagInput from '../common/TagInput';
 
 const CATEGORIES = ['Food','Transport','Housing','Entertainment','Health','Shopping','Education','Utilities','Other'];
 
-export default function ParsedExpenseConfirm({ expenses: initial, categories = [], onConfirm, onClose }) {
-  const [expenses, setExpenses] = useState(initial.map(e => ({ ...e, notes: '', tags: '' })));
+const CURRENCIES = [
+  'AED','AUD','BRL','CAD','CHF','CNY','CZK','DKK','EGP','EUR',
+  'GBP','HKD','HUF','IDR','ILS','INR','JPY','KRW','KWD','MAD',
+  'MXN','MYR','NOK','NZD','PHP','PKR','PLN','QAR','RON','RUB',
+  'SAR','SEK','SGD','THB','TRY','TWD','UAH','USD','ZAR',
+];
 
-  const update = (i, field, value) => {
-    setExpenses(prev => prev.map((e, idx) => idx === i ? { ...e, [field]: value } : e));
+const CONFETTI_COLORS = ['#7c3aed','#f97316','#3b82f6','#10b981','#f59e0b','#ec4899','#6366f1','#14b8a6'];
+const CONFETTI = Array.from({ length: 28 }, (_, i) => ({
+  color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+  left: (i * 3.7 + 1.5) % 100,
+  delay: (i * 70) % 500,
+  duration: 900 + (i * 61) % 700,
+  size: 6 + (i % 4) * 2,
+  round: i % 3 === 0,
+}));
+
+function fmt(n) { return Number(n || 0).toLocaleString('en', { maximumFractionDigits: 0 }); }
+
+export default function ParsedExpenseConfirm({ expenses: initial, categories = [], onConfirm, onClose }) {
+  const [expenses, setExpenses]     = useState(initial.map(e => ({ ...e, notes: e.notes || '', tags: e.tags || '' })));
+  const [current, setCurrent]       = useState(0);
+  const [isSaving, setIsSaving]     = useState(false);
+  const [savedBudgets, setSavedBudgets] = useState(null); // null = not yet saved
+
+  const total = expenses.length;
+  const done  = current >= total;
+
+  const update = (field, value) =>
+    setExpenses(prev => prev.map((e, i) => i === current ? { ...e, [field]: value } : e));
+
+  const remove = () => {
+    const next = expenses.filter((_, i) => i !== current);
+    setExpenses(next);
+    if (current >= next.length && current > 0) setCurrent(next.length - 1);
   };
 
-  const remove = (i) => setExpenses(prev => prev.filter((_, idx) => idx !== i));
+  const advance = () => setCurrent(c => c + 1);
 
   const catOptions = categories.length ? categories.map(c => c.name) : CATEGORIES;
+  const subcatMap  = Object.fromEntries(categories.map(c => [c.name, c.subcategories || []]));
+
+  const e        = expenses[current];
+  const subcats  = e ? (subcatMap[e.category] || []) : [];
+  const progress = total === 0 ? 100 : Math.round((current / total) * 100);
+
+  async function handleSave() {
+    setIsSaving(true);
+    try {
+      const budgets = await onConfirm(expenses);
+      setSavedBudgets(budgets ?? []);
+    } catch { /* parent shows toast */ }
+    finally { setIsSaving(false); }
+  }
+
+  // ── Congrats screen ──────────────────────────────────────────────
+  if (savedBudgets !== null) {
+    const confettiBackdrop = (
+      <>
+        {CONFETTI.map((c, i) => (
+          <div
+            key={i}
+            className="confetti-piece absolute top-0 pointer-events-none"
+            style={{
+              left: `${c.left}%`,
+              backgroundColor: c.color,
+              width: c.size,
+              height: c.round ? c.size : c.size * 0.5,
+              borderRadius: c.round ? '50%' : 2,
+              animationDelay: `${c.delay}ms`,
+              animationDuration: `${c.duration}ms`,
+            }}
+          />
+        ))}
+      </>
+    );
+
+    return (
+      <Modal open onClose={onClose} title="" size="md" hideHeader backdrop={confettiBackdrop}>
+        {/* Check icon */}
+        <div className="flex flex-col items-center pt-4 pb-2 gap-3 text-center">
+          <div className="pop-in w-16 h-16 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg">
+            <CheckCheck size={32} className="text-white" strokeWidth={2.5} />
+          </div>
+          <div>
+            <p className="text-lg font-bold text-gray-900 dark:text-white">All saved!</p>
+            <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">
+              {expenses.length} expense{expenses.length !== 1 ? 's' : ''} added successfully
+            </p>
+          </div>
+        </div>
+
+        {/* Budget impact */}
+        {savedBudgets.length > 0 && (
+          <div className="space-y-3 mb-5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500">
+              Budget Impact
+            </p>
+            {savedBudgets.map(b => {
+              const remaining = b.amount - b.spent;
+              const pct       = Math.min(Math.round((b.spent / b.amount) * 100), 100);
+              const isOver    = b.spent > b.amount;
+              const isWarn    = pct >= 80 && !isOver;
+              const barColor  = isOver ? 'bg-red-500' : isWarn ? 'bg-amber-400' : 'bg-emerald-500';
+              const textColor = isOver ? 'text-red-500' : isWarn ? 'text-amber-500' : 'text-emerald-600 dark:text-emerald-400';
+              return (
+                <div key={b.id}>
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <div className="flex items-center gap-1.5">
+                      {b.icon && <span>{b.icon}</span>}
+                      <span className="font-medium text-gray-700 dark:text-slate-300">{b.category_name}</span>
+                    </div>
+                    <span className={`font-semibold ${textColor}`}>
+                      {isOver
+                        ? `${fmt(Math.abs(remaining))} over budget`
+                        : `${fmt(remaining)} remaining`}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-100 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden">
+                    <div className={`h-1.5 rounded-full transition-all duration-700 ${barColor}`}
+                      style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="flex justify-between text-[10px] text-gray-400 dark:text-slate-500 mt-0.5">
+                    <span>{fmt(b.spent)} spent</span>
+                    <span>{fmt(b.amount)} budget</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <button onClick={onClose} className="btn-primary w-full">Done</button>
+      </Modal>
+    );
+  }
 
   return (
-    <Modal open onClose={onClose} title={`Confirm ${expenses.length} Expense${expenses.length !== 1 ? 's' : ''}`} size="lg">
-      <div className="space-y-4">
-        {expenses.map((e, i) => (
-          <div key={i} className="border border-gray-100 dark:border-slate-700 rounded-xl p-4 space-y-3 bg-gray-50/50 dark:bg-slate-800/50">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Expense {i + 1}</span>
-              <button onClick={() => remove(i)} className="text-red-400 hover:text-red-600 text-sm">Remove</button>
+    <Modal open onClose={onClose} title="" size="md" hideHeader>
+      {/* Step indicator */}
+      <div className="-mx-5 -mt-5 mb-5 px-5 pt-4 pb-3 border-b border-gray-100 dark:border-slate-700/60">
+        <div className="flex items-center justify-between mb-2.5">
+          <span className="text-xs font-semibold text-gray-700 dark:text-slate-300">
+            {done ? 'Review & save' : `Step ${current + 1} of ${total}`}
+          </span>
+          <span className="text-[11px] text-gray-400 dark:text-slate-500">
+            {done ? 'All reviewed' : `${total - current - 1} remaining`}
+          </span>
+        </div>
+        <div className="flex gap-1.5">
+          {expenses.map((_, i) => (
+            <div
+              key={i}
+              className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
+                i < current
+                  ? 'bg-brand-500'
+                  : i === current
+                  ? 'bg-brand-400'
+                  : 'bg-gray-200 dark:bg-slate-700'
+              }`}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Done / review screen */}
+      {done ? (
+        <div className="flex flex-col items-center py-4 gap-4 text-center">
+          <div className="w-14 h-14 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center">
+            <CheckCircle2 size={28} className="text-emerald-500" />
+          </div>
+          <div>
+            <p className="text-base font-bold text-gray-900 dark:text-white">Ready to save</p>
+            <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
+              {expenses.length === 0
+                ? 'All expenses were removed.'
+                : `${expenses.length} expense${expenses.length !== 1 ? 's' : ''} will be added.`}
+            </p>
+          </div>
+          {expenses.length > 0 && (
+            <div className="w-full space-y-1.5 max-h-36 overflow-y-auto">
+              {expenses.map((ex, i) => (
+                <div key={i} className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50 dark:bg-slate-700/50 text-xs">
+                  <span className="text-gray-600 dark:text-slate-300 truncate mr-2">{ex.description || ex.category}</span>
+                  <span className="font-semibold text-gray-900 dark:text-white shrink-0">{ex.amount} {ex.currency}</span>
+                </div>
+              ))}
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
-              <div>
-                <label className="label">Amount</label>
-                <input type="number" className="input" value={e.amount} step="0.01"
-                  onChange={ev => update(i, 'amount', parseFloat(ev.target.value))} />
-              </div>
-              <div>
-                <label className="label">Currency</label>
-                <input type="text" className="input" value={e.currency}
-                  onChange={ev => update(i, 'currency', ev.target.value)} />
-              </div>
-              <div>
-                <label className="label">Exchange Rate</label>
-                <input type="number" className="input" value={e.exchange_rate || 1} step="0.0001"
-                  onChange={ev => update(i, 'exchange_rate', parseFloat(ev.target.value))} />
-              </div>
-              <div>
-                <label className="label">Date</label>
-                <input type="date" className="input" value={e.date}
-                  onChange={ev => update(i, 'date', ev.target.value)} />
-              </div>
-              <div>
-                <label className="label">Category</label>
-                <select className="input" value={e.category} onChange={ev => update(i, 'category', ev.target.value)}>
-                  {catOptions.map(c => <option key={c}>{c}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="label">Subcategory</label>
-                <input type="text" className="input" value={e.subcategory || ''}
-                  onChange={ev => update(i, 'subcategory', ev.target.value)} />
-              </div>
+          )}
+          <div className="flex gap-3 w-full pt-1">
+            <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
+            <button
+              disabled={expenses.length === 0 || isSaving}
+              onClick={handleSave}
+              className="btn-primary flex-1"
+            >
+              {isSaving ? (
+                <span className="flex items-center gap-2">
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                  </svg>
+                  Saving…
+                </span>
+              ) : (
+                <><CheckCircle2 size={14} /> Save {expenses.length} Expense{expenses.length !== 1 ? 's' : ''}</>
+              )}
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* Single expense form */
+        <div className="space-y-4">
+          {e.raw_text && (
+            <p className="text-[11px] text-gray-400 dark:text-slate-500 bg-gray-50 dark:bg-slate-700/50 rounded-lg px-3 py-1.5 truncate">
+              "{e.raw_text}"
+            </p>
+          )}
+
+          {/* Amount + Currency */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Amount</label>
+              <input type="number" className="input h-9 text-lg font-bold" step="0.01"
+                value={e.amount} onChange={ev => update('amount', parseFloat(ev.target.value))} />
             </div>
             <div>
-              <label className="label">Description</label>
-              <input type="text" className="input" value={e.description || ''}
-                onChange={ev => update(i, 'description', ev.target.value)} maxLength={60} />
+              <label className="label">Currency</label>
+              <select className="input h-9" value={e.currency} onChange={ev => update('currency', ev.target.value)}>
+                {CURRENCIES.map(c => <option key={c}>{c}</option>)}
+              </select>
             </div>
+          </div>
+
+          {/* Date + Category + Subcategory */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="label">Date</label>
+              <input type="date" className="input h-9" value={e.date}
+                onChange={ev => update('date', ev.target.value)} />
+            </div>
+            <div>
+              <label className="label">Category</label>
+              <select className="input h-9" value={e.category} onChange={ev => update('category', ev.target.value)}>
+                {catOptions.map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Subcategory</label>
+              {subcats.length ? (
+                <select className="input h-9" value={e.subcategory || ''} onChange={ev => update('subcategory', ev.target.value)}>
+                  <option value="">— none —</option>
+                  {subcats.map(s => <option key={s.id || s.name} value={s.name}>{s.name}</option>)}
+                </select>
+              ) : (
+                <input type="text" className="input h-9" value={e.subcategory || ''}
+                  onChange={ev => update('subcategory', ev.target.value)} />
+              )}
+            </div>
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="label">Description</label>
+            <input type="text" className="input h-9" value={e.description || ''}
+              onChange={ev => update('description', ev.target.value)} maxLength={60} />
+          </div>
+
+          {/* Notes + Tags */}
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Notes</label>
-              <input type="text" className="input" value={e.notes || ''}
-                onChange={ev => update(i, 'notes', ev.target.value)} />
+              <input type="text" className="input h-9" value={e.notes || ''}
+                onChange={ev => update('notes', ev.target.value)} />
             </div>
             <div>
               <label className="label">Tags</label>
-              <TagInput value={e.tags || ''} onChange={v => update(i, 'tags', v)} />
+              <TagInput value={e.tags || ''} onChange={v => update('tags', v)} />
             </div>
           </div>
-        ))}
-        {expenses.length === 0 && (
-          <p className="text-center text-gray-400 text-sm py-4">All expenses removed</p>
-        )}
-      </div>
-      <div className="flex gap-3 mt-4 pt-4 border-t border-gray-100 dark:border-slate-700">
-        <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-        <button onClick={() => onConfirm(expenses)} disabled={!expenses.length} className="btn-primary flex-1">
-          Save {expenses.length} Expense{expenses.length !== 1 ? 's' : ''}
-        </button>
-      </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-2 pt-1">
+            <button onClick={remove}
+              className="flex items-center gap-1 text-xs text-red-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 px-2.5 py-1.5 rounded-lg transition-colors">
+              <Trash2 size={12} /> Remove
+            </button>
+            <button onClick={onClose} className="btn-secondary ml-auto">Cancel</button>
+            <button onClick={advance} className="btn-primary">
+              {current === total - 1 ? (
+                <><CheckCircle2 size={14} /> Review</>
+              ) : (
+                <>Next <ChevronRight size={14} /></>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
     </Modal>
   );
 }

@@ -101,10 +101,18 @@ export default function Dashboard() {
   async function handleConfirm(confirmed) {
     try {
       await createExpenses(api, confirmed);
-      showToast(`${confirmed.length} expense${confirmed.length !== 1 ? 's' : ''} saved!`);
-      setParsed(null);
-      fetchAll();
-    } catch { showToast('Failed to save expenses', 'error'); }
+    } catch {
+      showToast('Failed to save expenses', 'error');
+      throw new Error('save_failed');
+    }
+    showToast(`${confirmed.length} expense${confirmed.length !== 1 ? 's' : ''} saved!`);
+    fetchAll();
+    // Return fresh budget data for affected categories so the confirm modal can show impact
+    try {
+      const { budgets: fresh } = await getBudgets(api);
+      const affectedCats = new Set(confirmed.map(e => (e.category || '').toLowerCase()));
+      return fresh.filter(b => affectedCats.has((b.category_name || '').toLowerCase()));
+    } catch { return []; }
   }
 
   async function handleManualAdd(expense) {
