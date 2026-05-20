@@ -10,6 +10,7 @@ router.post('/parse', auth, async (req, res, next) => {
     if (!text?.trim()) return res.status(400).json({ error: 'Text is required' });
 
     const user = await userModel.findById(req.user.userId);
+    if (!user) return res.status(401).json({ error: 'User not found' });
     if (!user.claude_api_key) {
       return res.status(402).json({ error: 'No Claude API key configured. Please add one in Settings.' });
     }

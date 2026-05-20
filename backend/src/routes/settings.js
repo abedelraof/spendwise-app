@@ -8,6 +8,7 @@ const { execute, pool } = require('../db/database');
 router.get('/', auth, async (req, res, next) => {
   try {
     const user = await userModel.findById(req.user.userId);
+    if (!user) return res.status(401).json({ error: 'User not found' });
     res.json({
       currency:          user.currency,
       accounts_currency: user.accounts_currency ?? null,
@@ -29,6 +30,7 @@ router.put('/', auth, async (req, res, next) => {
     await userModel.updateSettings(req.user.userId, updates);
 
     const user = await userModel.findById(req.user.userId);
+    if (!user) return res.status(401).json({ error: 'User not found' });
     res.json({
       currency:          user.currency,
       accounts_currency: user.accounts_currency ?? null,
@@ -46,6 +48,7 @@ router.post('/clear-data', auth, async (req, res, next) => {
     }
     const userId = req.user.userId;
     const user = await userModel.findById(userId);
+    if (!user) return res.status(401).json({ error: 'User not found' });
 
     if (user.pin_hash) {
       const match = await bcrypt.compare(String(pin), user.pin_hash);

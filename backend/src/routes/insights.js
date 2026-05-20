@@ -32,6 +32,7 @@ router.get('/monthly', auth, async (req, res, next) => {
     if (count === 0) return res.json({ insight: null, yearMonth, cached: false });
 
     const user = await userModel.findById(req.user.userId);
+    if (!user) return res.status(401).json({ error: 'User not found' });
     if (!user.claude_api_key)
       return res.status(402).json({ error: 'No Claude API key configured.' });
 

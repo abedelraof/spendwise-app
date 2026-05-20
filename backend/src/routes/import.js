@@ -15,6 +15,7 @@ router.post('/preview', auth, upload.single('file'), async (req, res, next) => {
     if (!req.file) return res.status(400).json({ error: 'CSV file required' });
 
     const user = await userModel.findById(req.user.userId);
+    if (!user) return res.status(401).json({ error: 'User not found' });
     const records = parse(req.file.buffer, { columns: true, skip_empty_lines: true });
     if (!records.length) return res.status(400).json({ error: 'CSV file is empty' });
 
