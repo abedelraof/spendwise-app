@@ -198,52 +198,65 @@ function RecordModal({ accounts, rates, homeCurrency, onSave, onClose }) {
   }
 
   return (
-    <Modal open onClose={onClose} title={`Record Balances — ${today()}`} size="sm">
-      <form onSubmit={handleSubmit} className="space-y-3">
-        {accounts.map(a => (
-          <div key={a.id} className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-brand-50 dark:bg-brand-900/30 flex items-center justify-center text-base shrink-0 mt-0.5">
-              {a.icon}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{a.name}</p>
-              <p className="text-xs text-gray-400">{a.currency}{a.type === 'commodity' ? ` · ${a.unit}` : ''}</p>
-            </div>
-            {a.type === 'commodity' ? (
-              <div className="flex flex-col gap-1.5 w-44">
-                <div className="flex items-center gap-1">
-                  <input type="number" step="any" min="0" placeholder={`Qty (${a.unit})`}
-                    className="input text-right flex-1 py-1.5 text-sm"
-                    value={values[a.id]?.quantity ?? ''}
-                    onChange={e => setQty(a.id, e.target.value)} />
-                  <span className="text-xs text-gray-400 w-6 shrink-0">{a.unit}</span>
+    <Modal open onClose={onClose} title={`Record Balances — ${today()}`} size="lg">
+      <form onSubmit={handleSubmit} className="space-y-4">
+
+        {/* Scrollable accounts grid */}
+        <div className="max-h-[60vh] overflow-y-auto -mx-1 px-1">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {accounts.map(a => {
+              const qty = values[a.id]?.quantity ?? '';
+              const ppu = values[a.id]?.pricePerUnit ?? '';
+              const total = qty && ppu ? parseFloat(qty) * parseFloat(ppu) : null;
+              return (
+                <div key={a.id} className="flex items-center gap-2.5 p-2.5 rounded-xl bg-gray-50 dark:bg-slate-800/60">
+                  {/* Icon + name */}
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center text-sm shrink-0"
+                    style={{ backgroundColor: a.color + '22' }}>
+                    {a.icon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-gray-900 dark:text-white truncate leading-tight">{a.name}</p>
+                    <span className="text-[10px] text-gray-400 bg-gray-200 dark:bg-slate-700 rounded px-1">
+                      {a.currency}{a.type === 'commodity' ? ` · ${a.unit}` : ''}
+                    </span>
+                  </div>
+                  {/* Input(s) */}
+                  {a.type === 'commodity' ? (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <input type="number" step="any" min="0" placeholder="Qty"
+                        className="w-16 h-8 text-xs text-right rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                        value={qty} onChange={e => setQty(a.id, e.target.value)} />
+                      <span className="text-gray-300 dark:text-slate-600 text-xs">×</span>
+                      <input type="number" step="any" min="0" placeholder="Price"
+                        className="w-20 h-8 text-xs text-right rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                        value={ppu} onChange={e => setPpu(a.id, e.target.value)} />
+                      {total != null && (
+                        <span className="text-[10px] text-brand-500 dark:text-brand-400 font-semibold whitespace-nowrap">
+                          = {fmt(total)}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <input type="number" step="0.01" placeholder="0.00"
+                      className="w-28 h-8 text-sm text-right rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 focus:outline-none focus:ring-1 focus:ring-brand-500 shrink-0"
+                      value={values[a.id] ?? ''}
+                      onChange={e => setValues(v => ({ ...v, [a.id]: e.target.value }))} />
+                  )}
                 </div>
-                <div className="flex items-center gap-1">
-                  <input type="number" step="any" min="0" placeholder="Price/unit"
-                    className="input text-right flex-1 py-1.5 text-sm"
-                    value={values[a.id]?.pricePerUnit ?? ''}
-                    onChange={e => setPpu(a.id, e.target.value)} />
-                  <span className="text-xs text-gray-400 w-6 shrink-0">{a.currency.slice(0,3)}</span>
-                </div>
-                {values[a.id]?.quantity && values[a.id]?.pricePerUnit && (
-                  <p className="text-xs text-brand-500 dark:text-brand-400 font-semibold text-right">
-                    = {fmt(parseFloat(values[a.id].quantity) * parseFloat(values[a.id].pricePerUnit))} {a.currency}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <input type="number" step="0.01" className="input w-36 text-right" placeholder="0.00"
-                value={values[a.id] ?? ''}
-                onChange={e => setValues(v => ({ ...v, [a.id]: e.target.value }))} />
-            )}
+              );
+            })}
           </div>
-        ))}
-        <div className="pt-1">
+        </div>
+
+        {/* Notes */}
+        <div>
           <label className="label">Notes (optional)</label>
           <input className="input" placeholder="e.g. End of month snapshot"
             value={notes} onChange={e => setNotes(e.target.value)} />
         </div>
-        <div className="flex gap-3 pt-1">
+
+        <div className="flex gap-3">
           <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
           <button type="submit" disabled={saving} className="btn-primary flex-1">
             {saving ? 'Saving…' : 'Save Balances'}
