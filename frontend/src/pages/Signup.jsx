@@ -40,7 +40,7 @@ export default function Signup() {
           <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
             <Wallet size={18} className="text-white" />
           </div>
-          <span className="text-white font-bold text-xl tracking-tight">SpendWise</span>
+          <span className="text-white font-bold text-xl tracking-tight">ExpenseBeam</span>
         </div>
 
         <div className="space-y-8">
@@ -62,7 +62,7 @@ export default function Signup() {
           </div>
         </div>
 
-        <p className="text-brand-300 text-xs">© 2025 SpendWise</p>
+        <p className="text-brand-300 text-xs">© 2025 ExpenseBeam</p>
       </div>
 
       {/* Right form panel */}

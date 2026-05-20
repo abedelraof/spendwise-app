@@ -26,7 +26,7 @@ export default function Sidebar({ onClose }) {
         <div className="w-8 h-8 rounded-xl bg-white/15 dark:bg-brand-600 flex items-center justify-center shadow-glow shrink-0">
           <Wallet size={16} className="text-white" />
         </div>
-        <span className="font-bold text-white text-[17px] tracking-tight">SpendWise</span>
+        <span className="font-bold text-white text-[17px] tracking-tight">ExpenseBeam</span>
       </div>
 
       {/* Nav */}

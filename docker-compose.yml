@@ -3,13 +3,13 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: spendwise
-      POSTGRES_USER: spendwise
+      POSTGRES_DB: expensebeam
+      POSTGRES_USER: expensebeam
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U spendwise"]
+      test: ["CMD-SHELL", "pg_isready -U expensebeam"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -20,7 +20,7 @@ services:
     environment:
       PORT: 3001
       JWT_SECRET: ${JWT_SECRET}
-      DATABASE_URL: postgresql://spendwise:${DB_PASSWORD}@db:5432/spendwise
+      DATABASE_URL: postgresql://expensebeam:${DB_PASSWORD}@db:5432/expensebeam
       CORS_ORIGIN: https://${DOMAIN}
     depends_on:
       db:

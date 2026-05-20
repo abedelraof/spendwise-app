@@ -44,7 +44,7 @@ export default function AppShell() {
             <Menu size={20} />
           </button>
           <h1 className="flex-1 text-base font-semibold text-gray-900 dark:text-white">
-            {titles[pathname] || 'SpendWise'}
+            {titles[pathname] || 'ExpenseBeam'}
           </h1>
           <button
             className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 dark:text-slate-400 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
