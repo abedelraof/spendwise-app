@@ -16,6 +16,7 @@ build/
 .env.local
 .env.*.local
 backend/.env
+# .env.example and .env.production are safe to commit (no secrets)
 
 # SQLite database (contains real user data)
 *.sqlite
