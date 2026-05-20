@@ -9,12 +9,12 @@ router.post('/parse', auth, async (req, res, next) => {
     const { text } = req.body;
     if (!text?.trim()) return res.status(400).json({ error: 'Text is required' });
 
-    const user = userModel.findById(req.user.userId);
+    const user = await userModel.findById(req.user.userId);
     if (!user.claude_api_key) {
       return res.status(402).json({ error: 'No Claude API key configured. Please add one in Settings.' });
     }
 
-    const categories = categoryModel.findByUser(req.user.userId);
+    const categories = await categoryModel.findByUser(req.user.userId);
     const expenses = await parseExpenses(text, user.claude_api_key, user.currency, categories);
     res.json({ expenses });
   } catch (err) {
