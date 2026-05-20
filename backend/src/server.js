@@ -6,15 +6,21 @@ const { processOverdue } = require('./services/recurringService');
 
 const PORT = process.env.PORT || 3001;
 
-runMigrations();
-processOverdue(); // catch any backlog on startup
+(async () => {
+  await runMigrations();
+  await processOverdue(); // catch any backlog on startup
 
-// Apply overdue recurring expenses every day at midnight
-cron.schedule('0 0 * * *', () => {
-  const count = processOverdue();
-  if (count) console.log(`[cron] Applied ${count} recurring expense(s)`);
-});
+  // Apply overdue recurring expenses every day at midnight
+  cron.schedule('0 0 * * *', async () => {
+    try {
+      const count = await processOverdue();
+      if (count) console.log(`[cron] Applied ${count} recurring expense(s)`);
+    } catch (err) {
+      console.error('[cron] processOverdue failed', err);
+    }
+  });
 
-app.listen(PORT, () => {
-  console.log(`Backend running on http://localhost:${PORT}`);
-});
+  app.listen(PORT, () => {
+    console.log(`Backend running on http://localhost:${PORT}`);
+  });
+})();

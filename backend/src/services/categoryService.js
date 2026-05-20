@@ -1,15 +1,15 @@
 const categoryModel = require('../models/categoryModel');
 const subcategoryModel = require('../models/subcategoryModel');
 
-function matchOrCreateCategory(userId, categoryName, subcategoryName) {
-  let cat = categoryModel.findByName(userId, categoryName);
+async function matchOrCreateCategory(userId, categoryName, subcategoryName) {
+  let cat = await categoryModel.findByName(userId, categoryName);
   if (!cat) {
-    categoryModel.create(userId, { name: categoryName });
-    cat = categoryModel.findByName(userId, categoryName);
+    await categoryModel.create(userId, { name: categoryName });
+    cat = await categoryModel.findByName(userId, categoryName);
   }
   let subId = null;
   if (subcategoryName && cat) {
-    const sub = subcategoryModel.findOrCreate(cat.id, userId, subcategoryName);
+    const sub = await subcategoryModel.findOrCreate(cat.id, userId, subcategoryName);
     subId = sub?.id || null;
   }
   return { category_id: cat?.id || null, subcategory_id: subId };
