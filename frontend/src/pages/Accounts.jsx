@@ -654,20 +654,37 @@ function EditBalanceModal({ snapshot, account, onSave, onClose }) {
 // ── Snapshots Table ───────────────────────────────────────────────────────────
 const SNAPSHOTS_PAGE = 8;
 
+// PostgreSQL NOW() is the same for all rows in one transaction →
+// truncate to the second to use as a stable per-submission key.
+function batchKey(h) {
+  return (h.created_at ?? '').toString().slice(0, 19);
+}
+
+function fmtSubmitTime(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  return d.toLocaleString('en', {
+    day: 'numeric', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+
 function SnapshotsTable({ accounts, allHistories, homeCurrency, rates, onEditSnapshot, onDeleteSnapshot }) {
   const [showCount, setShowCount] = useState(SNAPSHOTS_PAGE);
   if (!allHistories.length) return null;
 
-  const byDate = {};
-  for (const h of allHistories) {
-    if (!byDate[h.recorded_date]) byDate[h.recorded_date] = [];
-    byDate[h.recorded_date].push(h);
-  }
-  const dates   = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
   const accById = Object.fromEntries(accounts.map(a => [a.id, a]));
 
-  function computeRow(entries) {
-    const entryMap = Object.fromEntries(entries.map(h => [h.account_id, h]));
+  // Group by submission batch (created_at second), sorted newest first
+  const byBatch = {};
+  for (const h of allHistories) {
+    const key = batchKey(h);
+    if (!byBatch[key]) byBatch[key] = [];
+    byBatch[key].push(h);
+  }
+  const batches = Object.keys(byBatch).sort((a, b) => b.localeCompare(a));
+
+  function computeTotal(entries) {
     let total = 0, allHaveRates = true;
     for (const h of entries) {
       const acc = accById[h.account_id];
@@ -678,41 +695,56 @@ function SnapshotsTable({ accounts, allHistories, homeCurrency, rates, onEditSna
         if (!isNaN(liveRate) && liveRate > 0) rate = liveRate;
         else allHaveRates = false;
       }
-      const isLiability = acc.type === 'liability';
       const converted = parseFloat(h.balance) / rate;
-      total += isLiability ? -converted : converted;
+      total += acc.type === 'liability' ? -converted : converted;
     }
-    return { total, allHaveRates, entryMap };
+    return { total, allHaveRates };
   }
 
-  const visible = dates.slice(0, showCount);
+  const visible = batches.slice(0, showCount);
 
   return (
     <div className="card overflow-hidden">
       {/* Header */}
       <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700/60 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Balance History</h3>
-        <span className="text-xs text-gray-400 dark:text-slate-500">{dates.length} snapshot{dates.length !== 1 ? 's' : ''}</span>
+        <span className="text-xs text-gray-400 dark:text-slate-500">
+          {batches.length} submission{batches.length !== 1 ? 's' : ''}
+        </span>
       </div>
 
-      {/* Date rows */}
+      {/* Submission groups */}
       <div className="divide-y divide-gray-50 dark:divide-slate-700/40">
-        {visible.map(date => {
-          const { total, allHaveRates, entryMap } = computeRow(byDate[date]);
-          const prefix = allHaveRates ? '≈' : '~';
-          const notes  = byDate[date].find(h => h.notes)?.notes ?? null;
-          const filled = byDate[date].map(h => accById[h.account_id]).filter(Boolean);
+        {visible.map(key => {
+          const entries = byBatch[key];
+          const { total, allHaveRates } = computeTotal(entries);
+          const prefix       = allHaveRates ? '≈' : '~';
+          const notes        = entries.find(h => h.notes)?.notes ?? null;
+          const recordedDate = entries[0]?.recorded_date ?? '';
+          const submittedAt  = entries[0]?.created_at ?? '';
+          const sameDay      = recordedDate === submittedAt.slice(0, 10);
 
           return (
-            <div key={date} className="p-4 hover:bg-gray-50/60 dark:hover:bg-slate-700/20 transition-colors">
-              {/* Row header: date + total */}
-              <div className="flex items-start justify-between mb-3 gap-2">
+            <div key={key} className="p-4 hover:bg-gray-50/60 dark:hover:bg-slate-700/20 transition-colors">
+              {/* Group header */}
+              <div className="flex items-start justify-between gap-2 mb-3">
                 <div>
-                  <p className="text-sm font-semibold text-gray-800 dark:text-white">{date}</p>
-                  {notes && <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{notes}</p>}
-                  <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
-                    {filled.length} account{filled.length !== 1 ? 's' : ''} recorded
+                  <p className="text-sm font-semibold text-gray-800 dark:text-white">
+                    {fmtSubmitTime(submittedAt)}
                   </p>
+                  <div className="flex flex-wrap items-center gap-x-2 mt-0.5">
+                    {!sameDay && (
+                      <span className="text-xs text-gray-400 dark:text-slate-500">
+                        For {recordedDate}
+                      </span>
+                    )}
+                    <span className="text-xs text-gray-400 dark:text-slate-500">
+                      {entries.length} account{entries.length !== 1 ? 's' : ''}
+                    </span>
+                    {notes && (
+                      <span className="text-xs text-gray-400 dark:text-slate-500 italic">· {notes}</span>
+                    )}
+                  </div>
                 </div>
                 <p className="text-sm font-bold text-gray-900 dark:text-white tabular-nums shrink-0">
                   {prefix} {fmt(total)}
@@ -722,7 +754,7 @@ function SnapshotsTable({ accounts, allHistories, homeCurrency, rates, onEditSna
 
               {/* Account entries grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
-                {byDate[date].map(h => {
+                {entries.map(h => {
                   const acc = accById[h.account_id];
                   if (!acc) return null;
                   return (
@@ -758,11 +790,11 @@ function SnapshotsTable({ accounts, allHistories, homeCurrency, rates, onEditSna
       </div>
 
       {/* Show more */}
-      {dates.length > showCount && (
+      {batches.length > showCount && (
         <div className="px-5 py-3 border-t border-gray-100 dark:border-slate-700/60">
           <button onClick={() => setShowCount(c => c + SNAPSHOTS_PAGE)}
             className="btn-ghost w-full text-xs text-gray-400 hover:text-gray-600 dark:hover:text-slate-300">
-            Show {Math.min(SNAPSHOTS_PAGE, dates.length - showCount)} more snapshots
+            Show {Math.min(SNAPSHOTS_PAGE, batches.length - showCount)} more
           </button>
         </div>
       )}
