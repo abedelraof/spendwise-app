@@ -652,7 +652,10 @@ function EditBalanceModal({ snapshot, account, onSave, onClose }) {
 }
 
 // ── Snapshots Table ───────────────────────────────────────────────────────────
+const SNAPSHOTS_PAGE = 8;
+
 function SnapshotsTable({ accounts, allHistories, homeCurrency, rates, onEditSnapshot, onDeleteSnapshot }) {
+  const [showCount, setShowCount] = useState(SNAPSHOTS_PAGE);
   if (!allHistories.length) return null;
 
   const byDate = {};
@@ -660,95 +663,109 @@ function SnapshotsTable({ accounts, allHistories, homeCurrency, rates, onEditSna
     if (!byDate[h.recorded_date]) byDate[h.recorded_date] = [];
     byDate[h.recorded_date].push(h);
   }
-  const dates = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
-
-  const usedIds = new Set(allHistories.map(h => h.account_id));
-  const cols    = accounts.filter(a => usedIds.has(a.id));
+  const dates   = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
+  const accById = Object.fromEntries(accounts.map(a => [a.id, a]));
 
   function computeRow(entries) {
     const entryMap = Object.fromEntries(entries.map(h => [h.account_id, h]));
-    let total = 0;
-    let allHaveRates = true;
-    for (const acc of cols) {
-      const h = entryMap[acc.id];
-      if (!h) continue;
-      // Use stored rate; fall back to live rate for old records (stored as 1.0 default)
-      let rate = h.exchange_rate ?? 1.0;
-      const isOldRecord = rate === 1.0 && acc.currency !== homeCurrency;
-      if (isOldRecord) {
-        const liveRate = rates?.rates?.[acc.currency];
-        if (liveRate) { rate = liveRate; } else { allHaveRates = false; }
+    let total = 0, allHaveRates = true;
+    for (const h of entries) {
+      const acc = accById[h.account_id];
+      if (!acc) continue;
+      let rate = parseFloat(h.exchange_rate) || 1.0;
+      if (rate === 1.0 && acc.currency !== homeCurrency) {
+        const liveRate = parseFloat(rates?.rates?.[acc.currency]);
+        if (!isNaN(liveRate) && liveRate > 0) rate = liveRate;
+        else allHaveRates = false;
       }
-      total += h.balance / rate;
+      const isLiability = acc.type === 'liability';
+      const converted = parseFloat(h.balance) / rate;
+      total += isLiability ? -converted : converted;
     }
     return { total, allHaveRates, entryMap };
   }
 
+  const visible = dates.slice(0, showCount);
+
   return (
     <div className="card overflow-hidden">
-      <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700/60">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Snapshots</h3>
+      {/* Header */}
+      <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700/60 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Balance History</h3>
+        <span className="text-xs text-gray-400 dark:text-slate-500">{dates.length} snapshot{dates.length !== 1 ? 's' : ''}</span>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 dark:bg-slate-700/40 border-b border-gray-100 dark:border-slate-700">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Date</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">Notes</th>
-              {cols.map(a => (
-                <th key={a.id} className="px-4 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                  {a.icon} {a.name} ({a.currency})
-                </th>
-              ))}
-              <th className="px-4 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider whitespace-nowrap">
-                Total ({homeCurrency})
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50 dark:divide-slate-700/50">
-            {dates.map(date => {
-              const { total, allHaveRates, entryMap } = computeRow(byDate[date]);
-              const prefix = allHaveRates ? '≈' : '~';
-              const notes  = byDate[date].find(h => h.notes)?.notes ?? null;
-              return (
-                <tr key={date} className="hover:bg-gray-50 dark:hover:bg-slate-700/30 transition-colors">
-                  <td className="px-4 py-3 text-xs font-medium text-gray-500 dark:text-slate-400 whitespace-nowrap">{date}</td>
-                  <td className="px-4 py-3 text-xs text-gray-400 dark:text-slate-500 whitespace-nowrap">{notes ?? '—'}</td>
-                  {cols.map(a => {
-                    const h = entryMap[a.id];
-                    return (
-                      <td key={a.id} className="px-4 py-3 text-right whitespace-nowrap">
-                        {h ? (
-                          <div className="flex items-center justify-end gap-1.5 group">
-                            <span className="font-medium text-gray-900 dark:text-white">
-                              {fmt(h.balance)}<span className="text-xs font-normal text-gray-400 ml-1">{a.currency}</span>
-                            </span>
-                            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-0.5">
-                              <button onClick={() => onEditSnapshot(h, a)}
-                                className="p-1 rounded text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-colors">
-                                <Pencil size={11} />
-                              </button>
-                              <button onClick={() => onDeleteSnapshot(h.id)}
-                                className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
-                                <Trash2 size={11} />
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-gray-300 dark:text-slate-600">—</span>
-                        )}
-                      </td>
-                    );
-                  })}
-                  <td className="px-4 py-3 text-right whitespace-nowrap font-semibold text-gray-900 dark:text-white">
-                    {prefix} {fmt(total)}<span className="text-xs font-normal text-gray-400 ml-1">{homeCurrency}</span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+
+      {/* Date rows */}
+      <div className="divide-y divide-gray-50 dark:divide-slate-700/40">
+        {visible.map(date => {
+          const { total, allHaveRates, entryMap } = computeRow(byDate[date]);
+          const prefix = allHaveRates ? '≈' : '~';
+          const notes  = byDate[date].find(h => h.notes)?.notes ?? null;
+          const filled = byDate[date].map(h => accById[h.account_id]).filter(Boolean);
+
+          return (
+            <div key={date} className="p-4 hover:bg-gray-50/60 dark:hover:bg-slate-700/20 transition-colors">
+              {/* Row header: date + total */}
+              <div className="flex items-start justify-between mb-3 gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-gray-800 dark:text-white">{date}</p>
+                  {notes && <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{notes}</p>}
+                  <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
+                    {filled.length} account{filled.length !== 1 ? 's' : ''} recorded
+                  </p>
+                </div>
+                <p className="text-sm font-bold text-gray-900 dark:text-white tabular-nums shrink-0">
+                  {prefix} {fmt(total)}
+                  <span className="text-xs font-normal text-gray-400 ml-1">{homeCurrency}</span>
+                </p>
+              </div>
+
+              {/* Account entries grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                {byDate[date].map(h => {
+                  const acc = accById[h.account_id];
+                  if (!acc) return null;
+                  return (
+                    <div key={h.id}
+                      className="group flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-slate-800/50 hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-colors">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-base shrink-0">{acc.icon}</span>
+                        <span className="text-xs text-gray-600 dark:text-slate-300 font-medium truncate">{acc.name}</span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-xs font-semibold text-gray-900 dark:text-white tabular-nums">
+                          {fmt(h.balance)}
+                          <span className="text-[10px] font-normal text-gray-400 ml-0.5">{acc.currency}</span>
+                        </span>
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-0.5 ml-1">
+                          <button onClick={() => onEditSnapshot(h, acc)}
+                            className="p-1 rounded text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-colors">
+                            <Pencil size={10} />
+                          </button>
+                          <button onClick={() => onDeleteSnapshot(h.id)}
+                            className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                            <Trash2 size={10} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
       </div>
+
+      {/* Show more */}
+      {dates.length > showCount && (
+        <div className="px-5 py-3 border-t border-gray-100 dark:border-slate-700/60">
+          <button onClick={() => setShowCount(c => c + SNAPSHOTS_PAGE)}
+            className="btn-ghost w-full text-xs text-gray-400 hover:text-gray-600 dark:hover:text-slate-300">
+            Show {Math.min(SNAPSHOTS_PAGE, dates.length - showCount)} more snapshots
+          </button>
+        </div>
+      )}
     </div>
   );
 }
