@@ -10,7 +10,7 @@ import { getIncomes, createIncomes, updateIncome, deleteIncome } from '../api/in
 
 const PAGE_SIZE = 20;
 const SOURCES   = ['Salary', 'Business', 'Freelance', 'Investment', 'Rental', 'Gift', 'Other'];
-const CURRENCIES = ['EGP', 'USD', 'EUR', 'GBP', 'SAR', 'AED', 'CAD', 'JPY', 'CHF', 'CNY'];
+const CURRENCIES = ['EGP', 'USD', 'EUR', 'GBP', 'ILS', 'SAR', 'AED', 'CAD', 'JPY', 'CHF', 'CNY'];
 
 const SOURCE_COLORS = {
   Salary:     'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',

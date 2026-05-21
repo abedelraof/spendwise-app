@@ -17,7 +17,7 @@ import { getGoals, createGoal, updateGoal, deleteGoal } from '../api/goalsApi';
 import { getSettings } from '../api/settingsApi';
 
 const ICONS      = ['🏦', '💵', '💳', '🏧', '💰', '📱', '🏠', '💼'];
-const CURRENCIES = ['EGP', 'USD', 'EUR', 'GBP', 'SAR', 'AED', 'CAD', 'JPY', 'CHF', 'CNY'];
+const CURRENCIES = ['EGP', 'USD', 'EUR', 'GBP', 'ILS', 'SAR', 'AED', 'CAD', 'JPY', 'CHF', 'CNY'];
 const COLORS     = ['#7c3aed','#3b82f6','#10b981','#f97316','#f59e0b','#ec4899','#6366f1','#14b8a6'];
 const UNITS      = ['g', 'oz', 'kg', 'tola', 'baht'];
 

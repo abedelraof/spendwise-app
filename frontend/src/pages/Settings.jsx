@@ -12,7 +12,7 @@ import CategoriesManager from '../components/settings/CategoriesManager';
 import BudgetManager from '../components/settings/BudgetManager';
 import CsvImport from '../components/settings/CsvImport';
 
-const CURRENCIES = ['EGP','USD','EUR','GBP','SAR','AED','JPY','CAD','AUD','CHF','INR'];
+const CURRENCIES = ['EGP','USD','EUR','GBP','ILS','SAR','AED','JPY','CAD','AUD','CHF','INR'];
 
 function SectionCard({ icon: Icon, title, children }) {
   return (
