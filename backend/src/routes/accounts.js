@@ -65,13 +65,14 @@ router.put('/reorder', auth, async (req, res, next) => {
 
 router.put('/:id', auth, async (req, res, next) => {
   try {
-    const { name, currency, icon, type, unit } = req.body;
+    const { name, currency, icon, type, unit, group_id } = req.body;
     const fields = []; const vals = []; let idx = 1;
     if (name     !== undefined) { fields.push(`name = $${idx++}`);     vals.push(name.trim()); }
     if (currency !== undefined) { fields.push(`currency = $${idx++}`); vals.push(currency); }
     if (icon     !== undefined) { fields.push(`icon = $${idx++}`);     vals.push(icon); }
     if (type     !== undefined) { fields.push(`type = $${idx++}`);     vals.push(type); }
     if (unit     !== undefined) { fields.push(`unit = $${idx++}`);     vals.push(unit); }
+    if (group_id !== undefined) { fields.push(`group_id = $${idx++}`); vals.push(group_id ?? null); }
     if (fields.length) {
       vals.push(req.params.id, req.user.userId);
       await execute(

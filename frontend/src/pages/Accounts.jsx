@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Pencil, Trash2, History, Wallet, ClipboardList, GripVertical } from 'lucide-react';
+import { Plus, Pencil, Trash2, History, Wallet, ClipboardList, GripVertical, ChevronDown, ChevronRight, FolderOpen } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts';
@@ -13,11 +13,13 @@ import { showToast } from '../components/common/Toast';
 import {
   getAccounts, createAccount, updateAccount, deleteAccount,
   getHistory, recordBalances, getRates, updateBalance, deleteBalance, reorderAccounts,
+  getAccountGroups, createAccountGroup, updateAccountGroup, deleteAccountGroup,
 } from '../api/accountsApi';
 import { getGoals, createGoal, updateGoal, deleteGoal } from '../api/goalsApi';
 import { getSettings } from '../api/settingsApi';
 
-const ICONS      = ['🏦', '💵', '💳', '🏧', '💰', '📱', '🏠', '💼'];
+const ICONS        = ['🏦', '💵', '💳', '🏧', '💰', '📱', '🏠', '💼'];
+const GROUP_ICONS  = ['📁', '💰', '🏦', '📈', '🏠', '🚗', '✈️', '💊', '🎓', '🛒', '💼', '⚙️'];
 const CURRENCIES = ['EGP', 'USD', 'EUR', 'GBP', 'ILS', 'SAR', 'AED', 'CAD', 'JPY', 'CHF', 'CNY'];
 const COLORS     = ['#7c3aed','#3b82f6','#10b981','#f97316','#f59e0b','#ec4899','#6366f1','#14b8a6'];
 const UNITS      = ['g', 'oz', 'kg', 'tola', 'baht'];
@@ -63,13 +65,14 @@ function buildTrendData(accounts, allHistories, homeCurrency, rates) {
 }
 
 // ── Add / Edit modal ──────────────────────────────────────────────────────────
-function AccountFormModal({ account, defaultCurrency, onSave, onClose }) {
+function AccountFormModal({ account, defaultCurrency, groups = [], onSave, onClose }) {
   const isEdit = !!account;
   const [name,     setName]     = useState(account?.name     ?? '');
   const [currency, setCurrency] = useState(account?.currency ?? defaultCurrency ?? 'EGP');
   const [icon,     setIcon]     = useState(account?.icon     ?? '🏦');
   const [type,     setType]     = useState(account?.type     ?? 'monetary');
   const [unit,     setUnit]     = useState(account?.unit     ?? 'g');
+  const [groupId,  setGroupId]  = useState(account?.group_id ?? null);
   const [saving,   setSaving]   = useState(false);
 
   async function handleSubmit(e) {
@@ -77,7 +80,7 @@ function AccountFormModal({ account, defaultCurrency, onSave, onClose }) {
     if (!name.trim()) return;
     setSaving(true);
     try {
-      await onSave({ name: name.trim(), currency, icon, type, unit: type === 'commodity' ? unit : null });
+      await onSave({ name: name.trim(), currency, icon, type, unit: type === 'commodity' ? unit : null, group_id: groupId });
       onClose();
     } finally { setSaving(false); }
   }
@@ -135,6 +138,15 @@ function AccountFormModal({ account, defaultCurrency, onSave, onClose }) {
             <label className="label">Unit</label>
             <select className="input" value={unit} onChange={e => setUnit(e.target.value)}>
               {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </div>
+        )}
+        {groups.length > 0 && (
+          <div>
+            <label className="label">Group (optional)</label>
+            <select className="input" value={groupId ?? ''} onChange={e => setGroupId(e.target.value ? parseInt(e.target.value) : null)}>
+              <option value="">No group</option>
+              {groups.map(g => <option key={g.id} value={g.id}>{g.icon} {g.name}</option>)}
             </select>
           </div>
         )}
@@ -506,6 +518,89 @@ function GoalsSection({ goals, accounts, onAdd, onEdit, onDelete }) {
   );
 }
 
+// ── Group Form Modal ─────────────────────────────────────────────────────────
+function GroupFormModal({ group, onSave, onClose }) {
+  const isEdit = !!group;
+  const [name,   setName]   = useState(group?.name ?? '');
+  const [icon,   setIcon]   = useState(group?.icon ?? '📁');
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setSaving(true);
+    try {
+      await onSave({ name: name.trim(), icon });
+      onClose();
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={isEdit ? 'Edit Group' : 'Add Group'} size="sm">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="label">Icon</label>
+          <div className="flex gap-2 flex-wrap">
+            {GROUP_ICONS.map(ic => (
+              <button key={ic} type="button" onClick={() => setIcon(ic)}
+                className={`w-9 h-9 rounded-xl text-lg flex items-center justify-center transition-all ${
+                  icon === ic
+                    ? 'bg-brand-100 dark:bg-brand-800/60 ring-2 ring-brand-500'
+                    : 'bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600'
+                }`}>
+                {ic}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className="label">Group Name</label>
+          <input className="input" value={name} onChange={e => setName(e.target.value)}
+            placeholder="e.g. Savings, Investments…" autoFocus />
+        </div>
+        <div className="flex gap-2 justify-end pt-1">
+          <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
+          <button type="submit" disabled={saving || !name.trim()} className="btn-primary">
+            {saving ? 'Saving…' : isEdit ? 'Save' : 'Add Group'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// ── Group Header ──────────────────────────────────────────────────────────────
+function GroupHeader({ group, total, homeCurrency, accountCount, isCollapsed, onToggle, onEdit, onDelete }) {
+  return (
+    <div className="flex items-center gap-2 px-1 py-0.5">
+      <button onClick={onToggle}
+        className="p-1 rounded-lg text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-colors shrink-0">
+        {isCollapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+      </button>
+      <span className="text-lg leading-none select-none">{group.icon}</span>
+      <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex-1 min-w-0 truncate">{group.name}</h3>
+      <span className="text-xs text-gray-400 bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded-full shrink-0">
+        {accountCount}
+      </span>
+      {total != null ? (
+        <span className="text-sm font-bold text-gray-900 dark:text-white tabular-nums shrink-0">
+          ≈ {fmt(total)}<span className="text-xs font-normal text-gray-400 ml-1">{homeCurrency}</span>
+        </span>
+      ) : (
+        <span className="text-sm text-gray-400 shrink-0">—</span>
+      )}
+      <button onClick={onEdit}
+        className="p-1.5 rounded-lg text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-colors">
+        <Pencil size={13} />
+      </button>
+      <button onClick={onDelete}
+        className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+        <Trash2 size={13} />
+      </button>
+    </div>
+  );
+}
+
 // ── Account Card ─────────────────────────────────────────────────────────────
 function AccountCard({ account, i, homeCurrency, convertedValue, isLiability, onHistory, onEdit, onDelete,
   isDragging, isDragOver, onGripMouseDown, cardRef }) {
@@ -830,6 +925,10 @@ export default function Accounts() {
   const [goals,             setGoals]             = useState([]);
   const [showAddGoal,       setShowAddGoal]       = useState(false);
   const [editGoalTarget,    setEditGoalTarget]    = useState(null);
+  const [groups,            setGroups]            = useState([]);
+  const [collapsedGroups,   setCollapsedGroups]   = useState({});
+  const [showAddGroup,      setShowAddGroup]      = useState(false);
+  const [editGroupTarget,   setEditGroupTarget]   = useState(null);
   const [dragState,         setDragState]         = useState(null); // { id, offsetX, offsetY, x, y, width }
   const [dragOverId,        setDragOverId]        = useState(null);
   const cardRefs    = useRef({});
@@ -869,8 +968,9 @@ export default function Accounts() {
     setRatesLoaded(true);
     setLoading(false);
 
-    // Goals (non-blocking)
+    // Goals + Groups (non-blocking)
     getGoals(api).then(d => setGoals(d.goals)).catch(() => {});
+    getAccountGroups(api).then(d => setGroups(d.groups)).catch(() => {});
   }, [api, user]);
 
   useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
@@ -922,6 +1022,37 @@ export default function Accounts() {
       await fetchAccounts();
       showToast('Snapshot updated');
     } catch { showToast('Failed to update snapshot', 'error'); throw new Error(); }
+  }
+
+  async function handleCreateGroup(data) {
+    try {
+      const d = await createAccountGroup(api, data);
+      setGroups(d.groups);
+      showToast('Group added');
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Failed to create group', 'error');
+      throw err;
+    }
+  }
+  async function handleUpdateGroup(data) {
+    try {
+      const d = await updateAccountGroup(api, editGroupTarget.id, data);
+      setGroups(d.groups);
+      showToast('Group updated');
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Failed to update group', 'error');
+      throw err;
+    }
+  }
+  async function handleDeleteGroup(id) {
+    if (!window.confirm('Delete this group? Accounts will be ungrouped.')) return;
+    try {
+      await deleteAccountGroup(api, id);
+      setGroups(g => g.filter(x => x.id !== id));
+      // Ungroup affected accounts in local state
+      setAccounts(a => a.map(acc => acc.group_id === id ? { ...acc, group_id: null } : acc));
+      showToast('Group deleted');
+    } catch { showToast('Failed to delete group', 'error'); }
   }
 
   async function handleCreateGoal(data) {
@@ -986,12 +1117,15 @@ export default function Accounts() {
 
     function onMouseMove(e) {
       setDragState(prev => prev ? { ...prev, x: e.clientX, y: e.clientY } : null);
-      // Find which card the cursor is over
+      // Find which card the cursor is over (same group only)
+      const draggingAccount = accounts.find(a => a.id === dragState.id);
       let found = null;
       for (const [idStr, el] of Object.entries(cardRefs.current)) {
         if (!el) continue;
         const id = parseInt(idStr);
         if (id === dragState.id) continue;
+        const targetAccount = accounts.find(a => a.id === id);
+        if (targetAccount?.group_id !== draggingAccount?.group_id) continue;
         const rect = el.getBoundingClientRect();
         if (e.clientX >= rect.left && e.clientX <= rect.right &&
             e.clientY >= rect.top  && e.clientY <= rect.bottom) {
@@ -1087,6 +1221,9 @@ export default function Accounts() {
               <ClipboardList size={14} /> Record Balances
             </button>
           )}
+          <button onClick={() => setShowAddGroup(true)} className="btn-secondary">
+            <FolderOpen size={14} /> Add Group
+          </button>
           <button onClick={() => setShowAdd(true)} className="btn-secondary">
             <Plus size={14} /> Add Account
           </button>
@@ -1139,55 +1276,116 @@ export default function Accounts() {
             description="Add your bank accounts, wallets, or cash to start tracking balances" />
         </div>
       ) : (
-        <>
-          {/* Assets */}
-          {assetAccounts.length > 0 && (
-            <>
-              {liabilityAccounts.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-gray-700 dark:text-slate-300">Assets</h3>
-                  <span className="text-xs text-gray-400">({assetAccounts.length})</span>
-                </div>
-              )}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {assetAccounts.map((account, i) => (
-                  <AccountCard key={account.id} account={account} i={i}
-                    homeCurrency={homeCurrency} convertedValue={convertedValue}
-                    onHistory={() => setHistoryTarget(account)}
-                    onEdit={() => setEditTarget(account)}
-                    onDelete={() => handleDelete(account.id)}
-                    isDragging={dragState?.id === account.id}
-                    isDragOver={dragOverId === account.id}
-                    onGripMouseDown={e => handleGripMouseDown(e, account)}
-                    cardRef={el => { cardRefs.current[account.id] = el; }} />
-                ))}
+        <div className="space-y-5">
+          {/* Named groups */}
+          {groups.map(group => {
+            const groupAccounts   = accounts.filter(a => a.group_id === group.id);
+            const gAssets         = groupAccounts.filter(a => a.type !== 'liability');
+            const gLiabilities    = groupAccounts.filter(a => a.type === 'liability');
+            const ta              = convertedSum(gAssets.filter(a => a.latest_balance != null));
+            const tl              = convertedSum(gLiabilities.filter(a => a.latest_balance != null));
+            const groupTotal      = (ta != null || tl != null) ? (ta ?? 0) - (tl ?? 0) : null;
+            const isCollapsed     = !!collapsedGroups[group.id];
+            return (
+              <div key={group.id} className="space-y-3">
+                <GroupHeader
+                  group={group}
+                  total={groupTotal}
+                  homeCurrency={homeCurrency}
+                  accountCount={groupAccounts.length}
+                  isCollapsed={isCollapsed}
+                  onToggle={() => setCollapsedGroups(c => ({ ...c, [group.id]: !c[group.id] }))}
+                  onEdit={() => setEditGroupTarget(group)}
+                  onDelete={() => handleDeleteGroup(group.id)}
+                />
+                {!isCollapsed && groupAccounts.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {groupAccounts.map((account, i) => (
+                      <AccountCard key={account.id} account={account} i={i}
+                        homeCurrency={homeCurrency} convertedValue={convertedValue}
+                        isLiability={account.type === 'liability'}
+                        onHistory={() => setHistoryTarget(account)}
+                        onEdit={() => setEditTarget(account)}
+                        onDelete={() => handleDelete(account.id)}
+                        isDragging={dragState?.id === account.id}
+                        isDragOver={dragOverId === account.id}
+                        onGripMouseDown={e => handleGripMouseDown(e, account)}
+                        cardRef={el => { cardRefs.current[account.id] = el; }} />
+                    ))}
+                  </div>
+                )}
+                {!isCollapsed && groupAccounts.length === 0 && (
+                  <p className="text-sm text-gray-400 dark:text-slate-500 italic px-1">No accounts in this group yet</p>
+                )}
               </div>
-            </>
-          )}
-          {/* Liabilities */}
-          {liabilityAccounts.length > 0 && (
-            <>
-              <div className="flex items-center gap-2 mt-1">
-                <h3 className="text-sm font-semibold text-red-600 dark:text-red-400">Liabilities</h3>
-                <span className="text-xs text-gray-400">({liabilityAccounts.length})</span>
+            );
+          })}
+
+          {/* Ungrouped accounts */}
+          {(() => {
+            const ungrouped    = accounts.filter(a => !a.group_id);
+            const ugAssets     = ungrouped.filter(a => a.type !== 'liability');
+            const ugLiabilities= ungrouped.filter(a => a.type === 'liability');
+            if (!ungrouped.length) return null;
+            return (
+              <div className="space-y-3">
+                {groups.length > 0 && (
+                  <div className="flex items-center gap-2 px-1">
+                    <h3 className="text-sm font-semibold text-gray-500 dark:text-slate-400">Ungrouped</h3>
+                    <span className="text-xs text-gray-400">({ungrouped.length})</span>
+                  </div>
+                )}
+                {ugAssets.length > 0 && (
+                  <>
+                    {ugLiabilities.length > 0 && groups.length === 0 && (
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-semibold text-gray-700 dark:text-slate-300">Assets</h3>
+                        <span className="text-xs text-gray-400">({ugAssets.length})</span>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {ugAssets.map((account, i) => (
+                        <AccountCard key={account.id} account={account} i={i}
+                          homeCurrency={homeCurrency} convertedValue={convertedValue}
+                          onHistory={() => setHistoryTarget(account)}
+                          onEdit={() => setEditTarget(account)}
+                          onDelete={() => handleDelete(account.id)}
+                          isDragging={dragState?.id === account.id}
+                          isDragOver={dragOverId === account.id}
+                          onGripMouseDown={e => handleGripMouseDown(e, account)}
+                          cardRef={el => { cardRefs.current[account.id] = el; }} />
+                      ))}
+                    </div>
+                  </>
+                )}
+                {ugLiabilities.length > 0 && (
+                  <>
+                    {groups.length === 0 && (
+                      <div className="flex items-center gap-2 mt-1">
+                        <h3 className="text-sm font-semibold text-red-600 dark:text-red-400">Liabilities</h3>
+                        <span className="text-xs text-gray-400">({ugLiabilities.length})</span>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {ugLiabilities.map((account, i) => (
+                        <AccountCard key={account.id} account={account} i={i + ugAssets.length}
+                          homeCurrency={homeCurrency} convertedValue={convertedValue}
+                          isLiability
+                          onHistory={() => setHistoryTarget(account)}
+                          onEdit={() => setEditTarget(account)}
+                          onDelete={() => handleDelete(account.id)}
+                          isDragging={dragState?.id === account.id}
+                          isDragOver={dragOverId === account.id}
+                          onGripMouseDown={e => handleGripMouseDown(e, account)}
+                          cardRef={el => { cardRefs.current[account.id] = el; }} />
+                      ))}
+                    </div>
+                  </>
+                )}
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {liabilityAccounts.map((account, i) => (
-                  <AccountCard key={account.id} account={account} i={i + assetAccounts.length}
-                    homeCurrency={homeCurrency} convertedValue={convertedValue}
-                    isLiability
-                    onHistory={() => setHistoryTarget(account)}
-                    onEdit={() => setEditTarget(account)}
-                    onDelete={() => handleDelete(account.id)}
-                    isDragging={dragState?.id === account.id}
-                    isDragOver={dragOverId === account.id}
-                    onGripMouseDown={e => handleGripMouseDown(e, account)}
-                    cardRef={el => { cardRefs.current[account.id] = el; }} />
-                ))}
-              </div>
-            </>
-          )}
-        </>
+            );
+          })()}
+        </div>
       )}
 
       {/* Net Worth Trend */}
@@ -1242,11 +1440,11 @@ export default function Accounts() {
 
       {/* Modals */}
       {showAdd && (
-        <AccountFormModal defaultCurrency={user?.currency}
+        <AccountFormModal defaultCurrency={user?.currency} groups={groups}
           onSave={handleCreate} onClose={() => setShowAdd(false)} />
       )}
       {editTarget && (
-        <AccountFormModal account={editTarget} defaultCurrency={user?.currency}
+        <AccountFormModal account={editTarget} defaultCurrency={user?.currency} groups={groups}
           onSave={handleUpdate} onClose={() => setEditTarget(null)} />
       )}
       {historyTarget && (
@@ -1267,6 +1465,13 @@ export default function Accounts() {
       {editGoalTarget && (
         <GoalFormModal goal={editGoalTarget} accounts={accounts} defaultCurrency={homeCurrency}
           onSave={handleUpdateGoal} onClose={() => setEditGoalTarget(null)} />
+      )}
+      {showAddGroup && (
+        <GroupFormModal onSave={handleCreateGroup} onClose={() => setShowAddGroup(false)} />
+      )}
+      {editGroupTarget && (
+        <GroupFormModal group={editGroupTarget} onSave={handleUpdateGroup}
+          onClose={() => setEditGroupTarget(null)} />
       )}
 
       {/* Floating drag card — follows mouse during custom drag */}

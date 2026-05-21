@@ -5,7 +5,7 @@ import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import Spinner from '../components/common/Spinner';
 import { showToast } from '../components/common/Toast';
-import { getAccounts, recordBalances, getRates } from '../api/accountsApi';
+import { getAccounts, recordBalances, getRates, getAccountGroups } from '../api/accountsApi';
 import { getSettings } from '../api/settingsApi';
 
 const todayISO = () => new Date().toISOString().split('T')[0];
@@ -124,6 +124,7 @@ export default function RecordBalances() {
   const [loading,      setLoading]      = useState(true);
   const [saving,       setSaving]       = useState(false);
   const [accounts,     setAccounts]     = useState([]);
+  const [groups,       setGroups]       = useState([]);
   const [rates,        setRates]        = useState(null);
   const [homeCurrency, setHomeCurrency] = useState('EGP');
   const [recordedDate, setRecordedDate] = useState(todayISO());
@@ -140,10 +141,12 @@ export default function RecordBalances() {
       } catch {}
       setHomeCurrency(currency);
 
-      const [accountsRes, ratesRes] = await Promise.allSettled([
+      const [accountsRes, ratesRes, groupsRes] = await Promise.allSettled([
         getAccounts(api),
         getRates(api, currency),
+        getAccountGroups(api),
       ]);
+      if (groupsRes.status === 'fulfilled') setGroups(groupsRes.value.groups);
 
       if (accountsRes.status === 'fulfilled') {
         const accs = accountsRes.value.accounts;
@@ -318,31 +321,71 @@ export default function RecordBalances() {
         </div>
       )}
 
-      {/* ── Asset accounts ── */}
-      {assetAccounts.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-3">
-            Assets ({assetAccounts.length})
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-            {assetAccounts.map(a => (
-              <AccountCard key={a.id} account={a} values={values} onMon={handleMon} onQty={handleQty} onPpu={handlePpu} />
-            ))}
-          </div>
+      {/* ── Grouped accounts ── */}
+      {groups.length > 0 ? (
+        <div className="space-y-6">
+          {groups.map(group => {
+            const groupAccounts = accounts.filter(a => a.group_id === group.id);
+            if (!groupAccounts.length) return null;
+            return (
+              <div key={group.id}>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-base leading-none">{group.icon}</span>
+                  <h3 className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider">
+                    {group.name}
+                  </h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {groupAccounts.map(a => (
+                    <AccountCard key={a.id} account={a} values={values} onMon={handleMon} onQty={handleQty} onPpu={handlePpu} />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+          {/* Ungrouped */}
+          {accounts.filter(a => !a.group_id).length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <h3 className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">
+                  Ungrouped
+                </h3>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                {accounts.filter(a => !a.group_id).map(a => (
+                  <AccountCard key={a.id} account={a} values={values} onMon={handleMon} onQty={handleQty} onPpu={handlePpu} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      )}
-
-      {/* ── Liability accounts ── */}
-      {liabilityAccounts.length > 0 && (
-        <div>
-          <h3 className="text-xs font-semibold text-red-400 dark:text-red-500 uppercase tracking-wider mb-3">
-            Liabilities ({liabilityAccounts.length})
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-            {liabilityAccounts.map(a => (
-              <AccountCard key={a.id} account={a} values={values} onMon={handleMon} onQty={handleQty} onPpu={handlePpu} />
-            ))}
-          </div>
+      ) : (
+        <div className="space-y-6">
+          {/* No groups — original Assets / Liabilities layout */}
+          {assetAccounts.length > 0 && (
+            <div>
+              <h3 className="text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-3">
+                Assets ({assetAccounts.length})
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                {assetAccounts.map(a => (
+                  <AccountCard key={a.id} account={a} values={values} onMon={handleMon} onQty={handleQty} onPpu={handlePpu} />
+                ))}
+              </div>
+            </div>
+          )}
+          {liabilityAccounts.length > 0 && (
+            <div>
+              <h3 className="text-xs font-semibold text-red-400 dark:text-red-500 uppercase tracking-wider mb-3">
+                Liabilities ({liabilityAccounts.length})
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                {liabilityAccounts.map(a => (
+                  <AccountCard key={a.id} account={a} values={values} onMon={handleMon} onQty={handleQty} onPpu={handlePpu} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

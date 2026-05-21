@@ -126,6 +126,18 @@ async function runMigrations() {
         created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
+      CREATE TABLE IF NOT EXISTS account_groups (
+        id         SERIAL PRIMARY KEY,
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name       TEXT NOT NULL,
+        icon       TEXT NOT NULL DEFAULT '📁',
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(user_id, name)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_account_groups_user ON account_groups(user_id);
+
       CREATE TABLE IF NOT EXISTS incomes (
         id            SERIAL PRIMARY KEY,
         user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -153,6 +165,7 @@ async function runMigrations() {
     // Additive column migrations (safe to run every startup)
     await client.query(`
       ALTER TABLE accounts ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE accounts ADD COLUMN IF NOT EXISTS group_id   INTEGER REFERENCES account_groups(id) ON DELETE SET NULL;
     `);
 
     console.log('[migrations] Schema up to date');
