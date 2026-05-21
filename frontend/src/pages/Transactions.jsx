@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Download, Trash2, Pencil, Filter, CreditCard, ChevronDown, X } from 'lucide-react';
+import { Download, Trash2, Pencil, Filter, CreditCard, ChevronDown, X, ArrowLeftRight } from 'lucide-react';
 import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import { getExpenses, deleteExpense, bulkDeleteExpenses, updateExpense } from '../api/expensesApi';
@@ -198,6 +198,16 @@ export default function Transactions() {
 
   return (
     <div className="space-y-4 animate-fade-in">
+      {/* Header */}
+      <div>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+          <ArrowLeftRight size={20} className="text-brand-500" /> Transactions
+        </h2>
+        <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">
+          Browse, search and manage all your expenses
+        </p>
+      </div>
+
       {/* Filters */}
       <div className="card px-3 py-2.5 flex flex-wrap items-end gap-2">
         {[

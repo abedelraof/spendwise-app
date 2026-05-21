@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, Repeat2 } from 'lucide-react';
 import useApi from '../hooks/useApi';
 import { getRecurring, createRecurring, deleteRecurring } from '../api/recurringApi';
 import { getCategories } from '../api/categoriesApi';
@@ -63,8 +63,16 @@ export default function Recurring() {
 
   return (
     <div className="space-y-4 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500 dark:text-slate-400">{recurring.length} active</p>
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+            <Repeat2 size={20} className="text-brand-500" /> Recurring
+          </h2>
+          <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">
+            Manage your scheduled and repeating expenses
+          </p>
+        </div>
         <button onClick={() => setShowForm(true)} className="btn-primary">
           <Plus size={14} /> Add recurring
         </button>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Pencil, Trash2, History, Wallet, ClipboardList, GripVertical } from 'lucide-react';
 import {
@@ -508,25 +508,32 @@ function GoalsSection({ goals, accounts, onAdd, onEdit, onDelete }) {
 
 // ── Account Card ─────────────────────────────────────────────────────────────
 function AccountCard({ account, i, homeCurrency, convertedValue, isLiability, onHistory, onEdit, onDelete,
-  isDragging, isDragOver, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd }) {
+  isDragging, isDragOver, onGripMouseDown, cardRef }) {
+
+  // While this card is being dragged, show a dashed placeholder in its grid slot
+  if (isDragging) {
+    return (
+      <div ref={cardRef} className="rounded-xl border-2 border-dashed border-brand-300/60 dark:border-brand-700/40 bg-brand-50/20 dark:bg-brand-900/10" style={{ minHeight: 140 }} />
+    );
+  }
+
   return (
     <div
-      draggable
-      onDragStart={onDragStart}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-      onDragEnd={onDragEnd}
-      className={`card p-5 flex flex-col gap-3 transition-all duration-150 select-none
+      ref={cardRef}
+      onMouseDown={e => {
+        // Don't start drag if clicking an action button
+        if (e.target.closest('button')) return;
+        onGripMouseDown(e);  // parent passes e => handleGripMouseDown(e, account)
+      }}
+      className={`card p-5 flex flex-col gap-3 transition-all duration-150 select-none cursor-grab active:cursor-grabbing
         ${isLiability ? 'border-red-100 dark:border-red-900/30' : ''}
-        ${isDragging  ? 'ring-2 ring-brand-500 shadow-xl shadow-brand-500/20 bg-brand-50 dark:bg-brand-900/20 rotate-1 scale-[1.03] z-10' : ''}
         ${isDragOver  ? 'ring-2 ring-brand-400 dark:ring-brand-500 scale-[1.01]' : ''}
       `}
     >
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          {/* Drag handle */}
-          <div className="text-gray-300 dark:text-slate-600 hover:text-gray-400 dark:hover:text-slate-400 cursor-grab active:cursor-grabbing shrink-0 -ml-1">
+          {/* Drag handle hint */}
+          <div className="text-gray-300 dark:text-slate-600 shrink-0 -ml-1">
             <GripVertical size={16} />
           </div>
           <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
@@ -823,8 +830,10 @@ export default function Accounts() {
   const [goals,             setGoals]             = useState([]);
   const [showAddGoal,       setShowAddGoal]       = useState(false);
   const [editGoalTarget,    setEditGoalTarget]    = useState(null);
-  const [dragId,            setDragId]            = useState(null);
+  const [dragState,         setDragState]         = useState(null); // { id, offsetX, offsetY, x, y, width }
   const [dragOverId,        setDragOverId]        = useState(null);
+  const cardRefs    = useRef({});
+  const dragOverRef = useRef(null); // stable ref for mouseup closure
 
   const fetchAccounts = useCallback(async () => {
     // Phase 1: resolve homeCurrency from persisted settings
@@ -955,40 +964,74 @@ export default function Accounts() {
     } catch { showToast('Failed to record balances', 'error'); throw new Error(); }
   }
 
-  function handleDragStart(e, id) {
-    setDragId(id);
-    e.dataTransfer.effectAllowed = 'move';
+  function handleGripMouseDown(e, account) {
+    e.preventDefault();
+    const cardEl = cardRefs.current[account.id];
+    if (!cardEl) return;
+    const rect = cardEl.getBoundingClientRect();
+    setDragState({
+      id: account.id,
+      offsetX: e.clientX - rect.left,
+      offsetY: e.clientY - rect.top,
+      x: e.clientX,
+      y: e.clientY,
+      width: rect.width,
+    });
     document.body.style.cursor = 'grabbing';
+    document.body.style.userSelect = 'none';
   }
-  function handleDragOver(e, id) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (id !== dragId) setDragOverId(id);
-  }
-  function handleDragLeave() {
-    setDragOverId(null);
-  }
-  function handleDragEnd() {
-    document.body.style.cursor = '';
-    setDragId(null);
-    setDragOverId(null);
-  }
-  function handleDrop(e, targetId) {
-    e.preventDefault();
-    document.body.style.cursor = '';
-    setDragOverId(null);
-    setDragId(null);
-    if (!dragId || dragId === targetId) return;
-    const newOrder = [...accounts];
-    const fromIdx = newOrder.findIndex(a => a.id === dragId);
-    const toIdx   = newOrder.findIndex(a => a.id === targetId);
-    if (fromIdx === -1 || toIdx === -1) return;
-    const [moved] = newOrder.splice(fromIdx, 1);
-    newOrder.splice(toIdx, 0, moved);
-    setAccounts(newOrder);
-    reorderAccounts(api, newOrder.map((a, i) => ({ id: a.id, sort_order: i })))
-      .catch(() => showToast('Failed to save order', 'error'));
-  }
+
+  useEffect(() => {
+    if (!dragState) return;
+
+    function onMouseMove(e) {
+      setDragState(prev => prev ? { ...prev, x: e.clientX, y: e.clientY } : null);
+      // Find which card the cursor is over
+      let found = null;
+      for (const [idStr, el] of Object.entries(cardRefs.current)) {
+        if (!el) continue;
+        const id = parseInt(idStr);
+        if (id === dragState.id) continue;
+        const rect = el.getBoundingClientRect();
+        if (e.clientX >= rect.left && e.clientX <= rect.right &&
+            e.clientY >= rect.top  && e.clientY <= rect.bottom) {
+          found = id;
+          break;
+        }
+      }
+      dragOverRef.current = found;
+      setDragOverId(found);
+    }
+
+    function onMouseUp() {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      const targetId = dragOverRef.current;
+      if (targetId && dragState.id !== targetId) {
+        setAccounts(curr => {
+          const newOrder = [...curr];
+          const fromIdx = newOrder.findIndex(a => a.id === dragState.id);
+          const toIdx   = newOrder.findIndex(a => a.id === targetId);
+          if (fromIdx === -1 || toIdx === -1) return curr;
+          const [moved] = newOrder.splice(fromIdx, 1);
+          newOrder.splice(toIdx, 0, moved);
+          reorderAccounts(api, newOrder.map((a, idx) => ({ id: a.id, sort_order: idx })))
+            .catch(() => showToast('Failed to save order', 'error'));
+          return newOrder;
+        });
+      }
+      setDragState(null);
+      setDragOverId(null);
+      dragOverRef.current = null;
+    }
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup',   onMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup',   onMouseUp);
+    };
+  }, [dragState, api]);
 
   if (loading) return (
     <div className="flex items-center justify-center h-64"><Spinner size="lg" /></div>
@@ -1113,13 +1156,10 @@ export default function Accounts() {
                     onHistory={() => setHistoryTarget(account)}
                     onEdit={() => setEditTarget(account)}
                     onDelete={() => handleDelete(account.id)}
-                    isDragging={dragId === account.id}
+                    isDragging={dragState?.id === account.id}
                     isDragOver={dragOverId === account.id}
-                    onDragStart={e => handleDragStart(e, account.id)}
-                    onDragOver={e => handleDragOver(e, account.id)}
-                    onDragLeave={handleDragLeave}
-                    onDrop={e => handleDrop(e, account.id)}
-                    onDragEnd={handleDragEnd} />
+                    onGripMouseDown={e => handleGripMouseDown(e, account)}
+                    cardRef={el => { cardRefs.current[account.id] = el; }} />
                 ))}
               </div>
             </>
@@ -1139,13 +1179,10 @@ export default function Accounts() {
                     onHistory={() => setHistoryTarget(account)}
                     onEdit={() => setEditTarget(account)}
                     onDelete={() => handleDelete(account.id)}
-                    isDragging={dragId === account.id}
+                    isDragging={dragState?.id === account.id}
                     isDragOver={dragOverId === account.id}
-                    onDragStart={e => handleDragStart(e, account.id)}
-                    onDragOver={e => handleDragOver(e, account.id)}
-                    onDragLeave={handleDragLeave}
-                    onDrop={e => handleDrop(e, account.id)}
-                    onDragEnd={handleDragEnd} />
+                    onGripMouseDown={e => handleGripMouseDown(e, account)}
+                    cardRef={el => { cardRefs.current[account.id] = el; }} />
                 ))}
               </div>
             </>
@@ -1231,6 +1268,61 @@ export default function Accounts() {
         <GoalFormModal goal={editGoalTarget} accounts={accounts} defaultCurrency={homeCurrency}
           onSave={handleUpdateGoal} onClose={() => setEditGoalTarget(null)} />
       )}
+
+      {/* Floating drag card — follows mouse during custom drag */}
+      {dragState && (() => {
+        const dragging = accounts.find(a => a.id === dragState.id);
+        if (!dragging) return null;
+        const di = accounts.findIndex(a => a.id === dragState.id);
+        const isLiab = dragging.type === 'liability';
+        const cv = convertedValue(dragging);
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              left: dragState.x - dragState.offsetX,
+              top:  dragState.y - dragState.offsetY,
+              width: dragState.width,
+              zIndex: 9999,
+              pointerEvents: 'none',
+              transform: 'rotate(2deg) scale(1.04)',
+            }}
+            className="card p-5 flex flex-col gap-3 shadow-2xl shadow-brand-500/25 ring-2 ring-brand-400 dark:ring-brand-500"
+          >
+            <div className="flex items-center gap-3">
+              <div className="text-gray-300 dark:text-slate-600 shrink-0 -ml-1">
+                <GripVertical size={16} />
+              </div>
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
+                style={{ backgroundColor: COLORS[di % COLORS.length] + '22' }}>
+                {dragging.icon}
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900 dark:text-white text-sm leading-tight">{dragging.name}</p>
+                <p className="text-xs text-gray-400 dark:text-slate-500">{dragging.currency}
+                  {isLiab && <span className="ml-1 text-red-400">· Liability</span>}
+                </p>
+              </div>
+            </div>
+            <div className="border-t border-gray-100 dark:border-slate-700/60 pt-3">
+              {dragging.latest_balance != null ? (
+                <>
+                  <p className={`text-2xl font-bold ${isLiab ? 'text-red-500 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
+                    {fmt(dragging.latest_balance)}
+                    <span className="text-sm font-normal text-gray-400 ml-1.5">{dragging.currency}</span>
+                  </p>
+                  {cv !== null && (
+                    <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">≈ {fmt(cv)} {homeCurrency}</p>
+                  )}
+                  <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">as of {dragging.latest_date}</p>
+                </>
+              ) : (
+                <p className="text-sm text-gray-400 dark:text-slate-500 italic">No balance recorded yet</p>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

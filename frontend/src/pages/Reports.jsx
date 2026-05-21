@@ -3,7 +3,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
   LineChart, Line, PieChart, Pie, CartesianGrid,
 } from 'recharts';
-import { Download, Filter } from 'lucide-react';
+import { Download, Filter, BarChart2 } from 'lucide-react';
 import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import { getSpendingTrend, getCategoryBreakdown, getTopDays, exportCsv } from '../api/reportsApi';
@@ -105,6 +105,16 @@ export default function Reports() {
 
   return (
     <div className="space-y-5 animate-fade-in">
+      {/* Header */}
+      <div>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+          <BarChart2 size={20} className="text-brand-500" /> Reports
+        </h2>
+        <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">
+          Visualise spending trends and category breakdowns
+        </p>
+      </div>
+
       {/* Filter bar */}
       <div className="card px-3 py-2.5 flex flex-wrap items-end gap-2">
         <div className="flex flex-col gap-0.5">
