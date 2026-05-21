@@ -155,7 +155,7 @@ export default function RecordBalances() {
               pricePerUnit: a.latest_price_per_unit != null ? String(a.latest_price_per_unit) : '',
             }];
           }
-          return [a.id, ''];
+          return [a.id, a.latest_balance != null ? String(parseFloat(a.latest_balance)) : ''];
         })));
       }
       if (ratesRes.status === 'fulfilled') setRates(ratesRes.value);
