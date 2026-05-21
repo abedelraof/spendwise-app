@@ -49,11 +49,11 @@ function buildTrendData(accounts, allHistories, homeCurrency, rates) {
     for (const h of byDate[date]) {
       const acc = accounts.find(a => a.id === h.account_id);
       if (!acc) continue;
-      let rate = h.exchange_rate ?? 1.0;
+      let rate = parseFloat(h.exchange_rate) || 1.0;
       if (rate === 1.0 && acc.currency !== homeCurrency) {
-        rate = rates?.rates?.[acc.currency] ?? 1.0;
+        rate = parseFloat(rates?.rates?.[acc.currency]) || 1.0;
       }
-      const converted = h.balance / rate;
+      const converted = parseFloat(h.balance) / rate;
       if (acc.type === 'liability') liabilities += converted;
       else assets += converted;
     }
@@ -897,10 +897,11 @@ export default function Accounts() {
   function convertedSum(list) {
     if (!ratesLoaded || ratesError || !rates?.rates) return null;
     return list.reduce((sum, a) => {
-      if (a.latest_balance == null) return sum;
-      if (a.currency === homeCurrency) return sum + a.latest_balance;
-      const rate = rates.rates[a.currency];
-      return rate ? sum + a.latest_balance / rate : sum;
+      const bal = parseFloat(a.latest_balance);
+      if (isNaN(bal)) return sum;
+      if (a.currency === homeCurrency) return sum + bal;
+      const rate = parseFloat(rates.rates[a.currency]);
+      return (!isNaN(rate) && rate > 0) ? sum + bal / rate : sum;
     }, 0);
   }
   const totalAssets      = convertedSum(assetAccounts.filter(a => a.latest_balance != null));
@@ -911,8 +912,9 @@ export default function Accounts() {
   const convertedValue = (account) => {
     if (!rates?.rates || ratesError || account.latest_balance == null) return null;
     if (account.currency === homeCurrency) return null;
-    const rate = rates.rates[account.currency];
-    return rate ? account.latest_balance / rate : null;
+    const bal  = parseFloat(account.latest_balance);
+    const rate = parseFloat(rates.rates[account.currency]);
+    return (!isNaN(bal) && !isNaN(rate) && rate > 0) ? bal / rate : null;
   };
 
   const ratesUpdatedAt = rates?.fetchedAt
