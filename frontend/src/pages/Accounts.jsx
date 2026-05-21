@@ -508,7 +508,7 @@ function GoalsSection({ goals, accounts, onAdd, onEdit, onDelete }) {
 
 // ── Account Card ─────────────────────────────────────────────────────────────
 function AccountCard({ account, i, homeCurrency, convertedValue, isLiability, onHistory, onEdit, onDelete,
-  isDragging, isDragOver, onDragStart, onDragOver, onDragLeave, onDrop }) {
+  isDragging, isDragOver, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd }) {
   return (
     <div
       draggable
@@ -516,9 +516,10 @@ function AccountCard({ account, i, homeCurrency, convertedValue, isLiability, on
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
+      onDragEnd={onDragEnd}
       className={`card p-5 flex flex-col gap-3 transition-all duration-150 select-none
         ${isLiability ? 'border-red-100 dark:border-red-900/30' : ''}
-        ${isDragging  ? 'opacity-40 scale-[0.98]' : ''}
+        ${isDragging  ? 'ring-2 ring-brand-500 shadow-xl shadow-brand-500/20 bg-brand-50 dark:bg-brand-900/20 rotate-1 scale-[1.03] z-10' : ''}
         ${isDragOver  ? 'ring-2 ring-brand-400 dark:ring-brand-500 scale-[1.01]' : ''}
       `}
     >
@@ -957,6 +958,7 @@ export default function Accounts() {
   function handleDragStart(e, id) {
     setDragId(id);
     e.dataTransfer.effectAllowed = 'move';
+    document.body.style.cursor = 'grabbing';
   }
   function handleDragOver(e, id) {
     e.preventDefault();
@@ -966,8 +968,14 @@ export default function Accounts() {
   function handleDragLeave() {
     setDragOverId(null);
   }
+  function handleDragEnd() {
+    document.body.style.cursor = '';
+    setDragId(null);
+    setDragOverId(null);
+  }
   function handleDrop(e, targetId) {
     e.preventDefault();
+    document.body.style.cursor = '';
     setDragOverId(null);
     setDragId(null);
     if (!dragId || dragId === targetId) return;
@@ -1110,7 +1118,8 @@ export default function Accounts() {
                     onDragStart={e => handleDragStart(e, account.id)}
                     onDragOver={e => handleDragOver(e, account.id)}
                     onDragLeave={handleDragLeave}
-                    onDrop={e => handleDrop(e, account.id)} />
+                    onDrop={e => handleDrop(e, account.id)}
+                    onDragEnd={handleDragEnd} />
                 ))}
               </div>
             </>
@@ -1135,7 +1144,8 @@ export default function Accounts() {
                     onDragStart={e => handleDragStart(e, account.id)}
                     onDragOver={e => handleDragOver(e, account.id)}
                     onDragLeave={handleDragLeave}
-                    onDrop={e => handleDrop(e, account.id)} />
+                    onDrop={e => handleDrop(e, account.id)}
+                    onDragEnd={handleDragEnd} />
                 ))}
               </div>
             </>
