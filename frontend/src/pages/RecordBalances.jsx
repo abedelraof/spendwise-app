@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, CalendarDays, Save, TrendingUp, TrendingDown, Landmark, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, CalendarDays, Save, TrendingUp, Landmark, CheckCircle2, AlertCircle } from 'lucide-react';
 import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import Spinner from '../components/common/Spinner';
@@ -18,20 +18,118 @@ const fmtK = (n) => {
   return fmt(n);
 };
 
+// ── AccountCard is defined at MODULE level so its identity never changes ────────
+function AccountCard({ account: a, values, onMon, onQty, onPpu }) {
+  const qty    = values[a.id]?.quantity     ?? '';
+  const ppu    = values[a.id]?.pricePerUnit ?? '';
+  const monVal = a.type !== 'commodity' ? (values[a.id] ?? '') : '';
+  const total  = qty && ppu ? parseFloat(qty) * parseFloat(ppu) : null;
+  const isFilled   = a.type === 'commodity' ? (qty !== '' && ppu !== '') : monVal !== '';
+  const isLiability = a.type === 'liability';
+
+  return (
+    <div className={`card p-4 flex flex-col gap-3 transition-all duration-200 ${
+      isFilled
+        ? isLiability
+          ? 'ring-2 ring-red-400/40 dark:ring-red-500/30'
+          : 'ring-2 ring-brand-400/40 dark:ring-brand-500/30'
+        : ''
+    }`}>
+      {/* Account identity row */}
+      <div className="flex items-center gap-3">
+        <div className="w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0"
+          style={{ backgroundColor: a.color + '28' }}>
+          {a.icon}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{a.name}</p>
+            {isFilled && (
+              <CheckCircle2 size={13} className={isLiability ? 'text-red-400 shrink-0' : 'text-emerald-400 shrink-0'} />
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <span className="text-[11px] font-medium px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400">
+              {a.currency}
+            </span>
+            {a.type === 'commodity' && (
+              <span className="text-[11px] px-1.5 py-0.5 rounded-md bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400">
+                {a.unit}
+              </span>
+            )}
+            {isLiability && (
+              <span className="text-[11px] px-1.5 py-0.5 rounded-md bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400">
+                Liability
+              </span>
+            )}
+          </div>
+        </div>
+        {a.latest_balance != null && (
+          <div className="text-right shrink-0">
+            <p className="text-[10px] text-gray-400 dark:text-slate-500">Last</p>
+            <p className="text-xs font-semibold text-gray-500 dark:text-slate-400">
+              {fmt(parseFloat(a.latest_balance))}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Input(s) */}
+      {a.type === 'commodity' ? (
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[11px] text-gray-400 dark:text-slate-500 mb-1 block">Quantity ({a.unit})</label>
+              <input type="number" step="any" min="0" placeholder="0"
+                className="input text-right font-semibold"
+                value={qty} onChange={e => onQty(a.id, e.target.value)} />
+            </div>
+            <div>
+              <label className="text-[11px] text-gray-400 dark:text-slate-500 mb-1 block">Price per {a.unit}</label>
+              <input type="number" step="any" min="0" placeholder="0.00"
+                className="input text-right font-semibold"
+                value={ppu} onChange={e => onPpu(a.id, e.target.value)} />
+            </div>
+          </div>
+          {total != null && (
+            <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-brand-50 dark:bg-brand-900/20">
+              <span className="text-xs text-brand-600 dark:text-brand-400">Total value</span>
+              <span className="text-sm font-bold text-brand-700 dark:text-brand-300">
+                {fmt(total)} <span className="font-normal text-xs">{a.currency}</span>
+              </span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div>
+          <label className="text-[11px] text-gray-400 dark:text-slate-500 mb-1 block">
+            Balance ({a.currency})
+          </label>
+          <input type="number" step="0.01"
+            placeholder={a.latest_balance != null ? fmt(parseFloat(a.latest_balance)) : '0.00'}
+            className="input text-right font-semibold text-base"
+            value={monVal} onChange={e => onMon(a.id, e.target.value)} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main page ──────────────────────────────────────────────────────────────────
 export default function RecordBalances() {
   const api      = useApi();
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  const [loading,  setLoading]  = useState(true);
-  const [saving,   setSaving]   = useState(false);
-  const [accounts, setAccounts] = useState([]);
-  const [rates,    setRates]    = useState(null);
+  const [loading,      setLoading]      = useState(true);
+  const [saving,       setSaving]       = useState(false);
+  const [accounts,     setAccounts]     = useState([]);
+  const [rates,        setRates]        = useState(null);
   const [homeCurrency, setHomeCurrency] = useState('EGP');
   const [recordedDate, setRecordedDate] = useState(todayISO());
-  const [notes,    setNotes]    = useState('');
-  const [values,   setValues]   = useState({});
-  const [dirty,    setDirty]    = useState(false);
+  const [notes,        setNotes]        = useState('');
+  const [values,       setValues]       = useState({});
+  const [dirty,        setDirty]        = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -50,7 +148,6 @@ export default function RecordBalances() {
       if (accountsRes.status === 'fulfilled') {
         const accs = accountsRes.value.accounts;
         setAccounts(accs);
-        // Pre-fill with latest known balances
         setValues(Object.fromEntries(accs.map(a => {
           if (a.type === 'commodity') {
             return [a.id, {
@@ -69,14 +166,12 @@ export default function RecordBalances() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Live conversion helper
   function toHome(amount, currency) {
     if (currency === homeCurrency) return amount;
     const rate = parseFloat(rates?.rates?.[currency]);
     return (!isNaN(rate) && rate > 0) ? amount / rate : amount;
   }
 
-  // Compute live totals from current input values
   function getLiveBalance(a) {
     if (a.type === 'commodity') {
       const qty = parseFloat(values[a.id]?.quantity);
@@ -94,10 +189,8 @@ export default function RecordBalances() {
     return list.reduce((sum, a) => {
       const bal = getLiveBalance(a);
       if (bal == null) {
-        // fall back to stored latest balance
         const stored = parseFloat(a.latest_balance);
-        if (isNaN(stored)) return sum;
-        return sum + toHome(stored, a.currency);
+        return isNaN(stored) ? sum : sum + toHome(stored, a.currency);
       }
       return sum + toHome(bal, a.currency);
     }, 0);
@@ -107,26 +200,24 @@ export default function RecordBalances() {
   const liveLiabilities = sumGroup(liabilityAccounts);
   const liveNetWorth    = liveAssets - liveLiabilities;
 
-  // Count how many accounts have been filled in this session
-  const filledCount = accounts.filter(a => {
-    if (a.type === 'commodity') {
-      return values[a.id]?.quantity !== '' && values[a.id]?.pricePerUnit !== '';
-    }
-    return values[a.id] !== '';
-  }).length;
+  const filledCount = accounts.filter(a =>
+    a.type === 'commodity'
+      ? (values[a.id]?.quantity !== '' && values[a.id]?.pricePerUnit !== '')
+      : values[a.id] !== ''
+  ).length;
 
-  function setMon(id, val) {
+  const handleMon = useCallback((id, val) => {
     setValues(v => ({ ...v, [id]: val }));
     setDirty(true);
-  }
-  function setQty(id, val) {
+  }, []);
+  const handleQty = useCallback((id, val) => {
     setValues(v => ({ ...v, [id]: { ...v[id], quantity: val } }));
     setDirty(true);
-  }
-  function setPpu(id, val) {
+  }, []);
+  const handlePpu = useCallback((id, val) => {
     setValues(v => ({ ...v, [id]: { ...v[id], pricePerUnit: val } }));
     setDirty(true);
-  }
+  }, []);
 
   async function handleSave() {
     const entries = accounts.flatMap(a => {
@@ -135,9 +226,8 @@ export default function RecordBalances() {
         : (parseFloat(rates.rates[a.currency]) || 1.0);
       if (a.type === 'commodity') {
         const { quantity, pricePerUnit } = values[a.id] ?? {};
-        if (quantity !== '' && pricePerUnit !== '' && quantity !== undefined && pricePerUnit !== undefined) {
+        if (quantity !== '' && pricePerUnit !== '' && quantity !== undefined && pricePerUnit !== undefined)
           return [{ accountId: a.id, quantity, pricePerUnit, exchangeRate }];
-        }
         return [];
       }
       const v = values[a.id];
@@ -167,102 +257,11 @@ export default function RecordBalances() {
     <div className="flex items-center justify-center h-64"><Spinner size="lg" /></div>
   );
 
-  const AccountCard = ({ account: a }) => {
-    const qty   = values[a.id]?.quantity     ?? '';
-    const ppu   = values[a.id]?.pricePerUnit ?? '';
-    const monVal = a.type !== 'commodity' ? (values[a.id] ?? '') : '';
-    const total = qty && ppu ? parseFloat(qty) * parseFloat(ppu) : null;
-    const isFilled = a.type === 'commodity'
-      ? (qty !== '' && ppu !== '')
-      : monVal !== '';
-    const isLiability = a.type === 'liability';
-
-    return (
-      <div className={`card p-4 flex flex-col gap-3 transition-all duration-200 ${
-        isFilled
-          ? isLiability
-            ? 'ring-2 ring-red-400/40 dark:ring-red-500/30'
-            : 'ring-2 ring-brand-400/40 dark:ring-brand-500/30'
-          : ''
-      }`}>
-        {/* Account identity row */}
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0"
-            style={{ backgroundColor: a.color + '28' }}>
-            {a.icon}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{a.name}</p>
-              {isFilled && (
-                <CheckCircle2 size={13} className={isLiability ? 'text-red-400 shrink-0' : 'text-emerald-400 shrink-0'} />
-              )}
-            </div>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <span className="text-[11px] font-medium px-1.5 py-0.5 rounded-md bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400">
-                {a.currency}
-              </span>
-              {a.type === 'commodity' && (
-                <span className="text-[11px] px-1.5 py-0.5 rounded-md bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400">
-                  {a.unit}
-                </span>
-              )}
-              {isLiability && (
-                <span className="text-[11px] px-1.5 py-0.5 rounded-md bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400">
-                  Liability
-                </span>
-              )}
-            </div>
-          </div>
-          {a.latest_balance != null && (
-            <div className="text-right shrink-0">
-              <p className="text-[10px] text-gray-400 dark:text-slate-500">Last</p>
-              <p className="text-xs font-semibold text-gray-500 dark:text-slate-400">
-                {fmt(parseFloat(a.latest_balance))}
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Input(s) */}
-        {a.type === 'commodity' ? (
-          <div className="space-y-2">
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-[11px] text-gray-400 dark:text-slate-500 mb-1 block">Quantity ({a.unit})</label>
-                <input type="number" step="any" min="0" placeholder="0"
-                  className="input text-right font-semibold"
-                  value={qty} onChange={e => setQty(a.id, e.target.value)} />
-              </div>
-              <div>
-                <label className="text-[11px] text-gray-400 dark:text-slate-500 mb-1 block">Price per {a.unit}</label>
-                <input type="number" step="any" min="0" placeholder="0.00"
-                  className="input text-right font-semibold"
-                  value={ppu} onChange={e => setPpu(a.id, e.target.value)} />
-              </div>
-            </div>
-            {total != null && (
-              <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-brand-50 dark:bg-brand-900/20">
-                <span className="text-xs text-brand-600 dark:text-brand-400">Total value</span>
-                <span className="text-sm font-bold text-brand-700 dark:text-brand-300">
-                  {fmt(total)} <span className="font-normal text-xs">{a.currency}</span>
-                </span>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div>
-            <label className="text-[11px] text-gray-400 dark:text-slate-500 mb-1 block">
-              Balance ({a.currency})
-            </label>
-            <input type="number" step="0.01" placeholder={a.latest_balance != null ? fmt(parseFloat(a.latest_balance)) : '0.00'}
-              className="input text-right font-semibold text-base"
-              value={monVal} onChange={e => setMon(a.id, e.target.value)} />
-          </div>
-        )}
-      </div>
-    );
-  };
+  const summaryCards = [
+    { label: 'Total Assets',      value: liveAssets,      Icon: TrendingUp, color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-900/20', show: assetAccounts.length > 0 },
+    { label: 'Total Liabilities', value: liveLiabilities, Icon: AlertCircle, color: 'text-red-500',     bg: 'bg-red-50 dark:bg-red-900/20',         show: liabilityAccounts.length > 0 },
+    { label: 'Net Worth',         value: liveNetWorth,    Icon: Landmark,   color: liveNetWorth >= 0 ? 'text-brand-600 dark:text-brand-400' : 'text-red-500', bg: 'bg-brand-50 dark:bg-brand-900/20', show: true },
+  ].filter(s => s.show);
 
   return (
     <div className="animate-fade-in pb-32">
@@ -279,48 +278,23 @@ export default function RecordBalances() {
             Update all your account balances for a specific date
           </p>
         </div>
-        {/* Date picker */}
         <div className="card px-4 py-3 flex items-center gap-3 self-start">
           <CalendarDays size={16} className="text-brand-500 shrink-0" />
           <div>
             <p className="text-[11px] text-gray-400 dark:text-slate-500 mb-0.5">Snapshot Date</p>
-            <input type="date" className="text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-0 p-0"
+            <input type="date"
+              className="text-sm font-semibold text-gray-900 dark:text-white bg-transparent border-none outline-none focus:ring-0 p-0"
               value={recordedDate} onChange={e => setRecordedDate(e.target.value)} />
           </div>
         </div>
       </div>
 
       {/* ── Live summary strip ── */}
-      <div className="grid grid-cols-3 gap-3 mb-6">
-        {[
-          {
-            label: 'Total Assets',
-            value: liveAssets,
-            icon: TrendingUp,
-            color: 'text-emerald-500',
-            bg: 'bg-emerald-50 dark:bg-emerald-900/20',
-            show: assetAccounts.length > 0,
-          },
-          {
-            label: 'Total Liabilities',
-            value: liveLiabilities,
-            icon: AlertCircle,
-            color: 'text-red-500',
-            bg: 'bg-red-50 dark:bg-red-900/20',
-            show: liabilityAccounts.length > 0,
-          },
-          {
-            label: 'Net Worth',
-            value: liveNetWorth,
-            icon: Landmark,
-            color: liveNetWorth >= 0 ? 'text-brand-600 dark:text-brand-400' : 'text-red-500',
-            bg: 'bg-brand-50 dark:bg-brand-900/20',
-            show: true,
-          },
-        ].filter(s => s.show).map(s => (
+      <div className={`grid gap-3 mb-6 ${summaryCards.length === 3 ? 'grid-cols-3' : summaryCards.length === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        {summaryCards.map(s => (
           <div key={s.label} className={`card p-4 ${s.bg}`}>
             <div className="flex items-center gap-2 mb-1">
-              <s.icon size={14} className={s.color} />
+              <s.Icon size={14} className={s.color} />
               <p className="text-[11px] font-medium text-gray-500 dark:text-slate-400">{s.label}</p>
             </div>
             <p className={`text-lg font-bold ${s.color} tabular-nums`}>
@@ -351,7 +325,9 @@ export default function RecordBalances() {
             Assets ({assetAccounts.length})
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-            {assetAccounts.map(a => <AccountCard key={a.id} account={a} />)}
+            {assetAccounts.map(a => (
+              <AccountCard key={a.id} account={a} values={values} onMon={handleMon} onQty={handleQty} onPpu={handlePpu} />
+            ))}
           </div>
         </div>
       )}
@@ -363,7 +339,9 @@ export default function RecordBalances() {
             Liabilities ({liabilityAccounts.length})
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-            {liabilityAccounts.map(a => <AccountCard key={a.id} account={a} />)}
+            {liabilityAccounts.map(a => (
+              <AccountCard key={a.id} account={a} values={values} onMon={handleMon} onQty={handleQty} onPpu={handlePpu} />
+            ))}
           </div>
         </div>
       )}
