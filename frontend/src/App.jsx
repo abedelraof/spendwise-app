@@ -12,6 +12,7 @@ import Settings from './pages/Settings';
 import Recurring from './pages/Recurring';
 import Accounts from './pages/Accounts';
 import Income from './pages/Income';
+import RecordBalances from './pages/RecordBalances';
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
           <Route path="reports" element={<Reports />} />
           <Route path="recurring" element={<Recurring />} />
           <Route path="accounts" element={<Accounts />} />
+          <Route path="accounts/record" element={<RecordBalances />} />
           <Route path="income" element={<Income />} />
           <Route path="settings" element={<Settings />} />
         </Route>

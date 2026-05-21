@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Pencil, Trash2, History, Wallet, ClipboardList } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -740,6 +741,7 @@ function SnapshotsTable({ accounts, allHistories, homeCurrency, rates, onEditSna
 export default function Accounts() {
   const api  = useApi();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [accounts,      setAccounts]      = useState([]);
   const [allHistories,  setAllHistories]  = useState([]);
   const [loading,       setLoading]       = useState(true);
@@ -935,7 +937,7 @@ export default function Accounts() {
         </div>
         <div className="flex gap-2">
           {accounts.length > 0 && (
-            <button onClick={() => setRecording(true)} className="btn-primary">
+            <button onClick={() => navigate('/app/accounts/record')} className="btn-primary">
               <ClipboardList size={14} /> Record Balances
             </button>
           )}
@@ -1092,15 +1094,6 @@ export default function Accounts() {
       {editTarget && (
         <AccountFormModal account={editTarget} defaultCurrency={user?.currency}
           onSave={handleUpdate} onClose={() => setEditTarget(null)} />
-      )}
-      {recording && (
-        <RecordModal
-          accounts={accounts}
-          rates={rates}
-          homeCurrency={homeCurrency}
-          onSave={handleRecord}
-          onClose={() => setRecording(false)}
-        />
       )}
       {historyTarget && (
         <HistoryModal account={historyTarget} api={api} onClose={() => setHistoryTarget(null)} />
