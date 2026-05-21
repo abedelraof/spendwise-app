@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Pencil, Trash2, History, Wallet, ClipboardList } from 'lucide-react';
+import { Plus, Pencil, Trash2, History, Wallet, ClipboardList, GripVertical } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts';
@@ -12,7 +12,7 @@ import EmptyState from '../components/common/EmptyState';
 import { showToast } from '../components/common/Toast';
 import {
   getAccounts, createAccount, updateAccount, deleteAccount,
-  getHistory, recordBalances, getRates, updateBalance, deleteBalance,
+  getHistory, recordBalances, getRates, updateBalance, deleteBalance, reorderAccounts,
 } from '../api/accountsApi';
 import { getGoals, createGoal, updateGoal, deleteGoal } from '../api/goalsApi';
 import { getSettings } from '../api/settingsApi';
@@ -507,11 +507,27 @@ function GoalsSection({ goals, accounts, onAdd, onEdit, onDelete }) {
 }
 
 // ── Account Card ─────────────────────────────────────────────────────────────
-function AccountCard({ account, i, homeCurrency, convertedValue, isLiability, onHistory, onEdit, onDelete }) {
+function AccountCard({ account, i, homeCurrency, convertedValue, isLiability, onHistory, onEdit, onDelete,
+  isDragging, isDragOver, onDragStart, onDragOver, onDragLeave, onDrop }) {
   return (
-    <div className={`card p-5 flex flex-col gap-3 ${isLiability ? 'border-red-100 dark:border-red-900/30' : ''}`}>
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      className={`card p-5 flex flex-col gap-3 transition-all duration-150 select-none
+        ${isLiability ? 'border-red-100 dark:border-red-900/30' : ''}
+        ${isDragging  ? 'opacity-40 scale-[0.98]' : ''}
+        ${isDragOver  ? 'ring-2 ring-brand-400 dark:ring-brand-500 scale-[1.01]' : ''}
+      `}
+    >
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
+          {/* Drag handle */}
+          <div className="text-gray-300 dark:text-slate-600 hover:text-gray-400 dark:hover:text-slate-400 cursor-grab active:cursor-grabbing shrink-0 -ml-1">
+            <GripVertical size={16} />
+          </div>
           <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
             style={{ backgroundColor: COLORS[i % COLORS.length] + '22' }}>
             {account.icon}
@@ -757,6 +773,8 @@ export default function Accounts() {
   const [goals,             setGoals]             = useState([]);
   const [showAddGoal,       setShowAddGoal]       = useState(false);
   const [editGoalTarget,    setEditGoalTarget]    = useState(null);
+  const [dragId,            setDragId]            = useState(null);
+  const [dragOverId,        setDragOverId]        = useState(null);
 
   const fetchAccounts = useCallback(async () => {
     // Phase 1: resolve homeCurrency from persisted settings
@@ -887,6 +905,34 @@ export default function Accounts() {
     } catch { showToast('Failed to record balances', 'error'); throw new Error(); }
   }
 
+  function handleDragStart(e, id) {
+    setDragId(id);
+    e.dataTransfer.effectAllowed = 'move';
+  }
+  function handleDragOver(e, id) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (id !== dragId) setDragOverId(id);
+  }
+  function handleDragLeave() {
+    setDragOverId(null);
+  }
+  function handleDrop(e, targetId) {
+    e.preventDefault();
+    setDragOverId(null);
+    setDragId(null);
+    if (!dragId || dragId === targetId) return;
+    const newOrder = [...accounts];
+    const fromIdx = newOrder.findIndex(a => a.id === dragId);
+    const toIdx   = newOrder.findIndex(a => a.id === targetId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const [moved] = newOrder.splice(fromIdx, 1);
+    newOrder.splice(toIdx, 0, moved);
+    setAccounts(newOrder);
+    reorderAccounts(api, newOrder.map((a, i) => ({ id: a.id, sort_order: i })))
+      .catch(() => showToast('Failed to save order', 'error'));
+  }
+
   if (loading) return (
     <div className="flex items-center justify-center h-64"><Spinner size="lg" /></div>
   );
@@ -1009,7 +1055,13 @@ export default function Accounts() {
                     homeCurrency={homeCurrency} convertedValue={convertedValue}
                     onHistory={() => setHistoryTarget(account)}
                     onEdit={() => setEditTarget(account)}
-                    onDelete={() => handleDelete(account.id)} />
+                    onDelete={() => handleDelete(account.id)}
+                    isDragging={dragId === account.id}
+                    isDragOver={dragOverId === account.id}
+                    onDragStart={e => handleDragStart(e, account.id)}
+                    onDragOver={e => handleDragOver(e, account.id)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={e => handleDrop(e, account.id)} />
                 ))}
               </div>
             </>
@@ -1028,7 +1080,13 @@ export default function Accounts() {
                     isLiability
                     onHistory={() => setHistoryTarget(account)}
                     onEdit={() => setEditTarget(account)}
-                    onDelete={() => handleDelete(account.id)} />
+                    onDelete={() => handleDelete(account.id)}
+                    isDragging={dragId === account.id}
+                    isDragOver={dragOverId === account.id}
+                    onDragStart={e => handleDragStart(e, account.id)}
+                    onDragOver={e => handleDragOver(e, account.id)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={e => handleDrop(e, account.id)} />
                 ))}
               </div>
             </>

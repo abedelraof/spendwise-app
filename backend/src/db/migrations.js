@@ -150,6 +150,11 @@ async function runMigrations() {
       CREATE INDEX IF NOT EXISTS idx_incomes_user_date      ON incomes(user_id, date);
     `);
 
+    // Additive column migrations (safe to run every startup)
+    await client.query(`
+      ALTER TABLE accounts ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
+    `);
+
     console.log('[migrations] Schema up to date');
   } finally {
     client.release();

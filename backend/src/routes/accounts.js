@@ -15,7 +15,7 @@ const LIST_SQL = `
     ORDER BY recorded_date DESC, created_at DESC LIMIT 1
   )
   WHERE a.user_id = $1
-  ORDER BY a.created_at
+  ORDER BY a.sort_order ASC, a.created_at ASC
 `;
 
 const list = (userId) => query(LIST_SQL, [userId]);
@@ -35,6 +35,31 @@ router.post('/', auth, async (req, res, next) => {
       [req.user.userId, name.trim(), currency, icon, type, unit]
     );
     res.status(201).json({ accounts: await list(req.user.userId) });
+  } catch (err) { next(err); }
+});
+
+router.put('/reorder', auth, async (req, res, next) => {
+  try {
+    const { order } = req.body; // [{id, sort_order}]
+    if (!Array.isArray(order) || !order.length)
+      return res.status(400).json({ error: 'order array required' });
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const { id, sort_order } of order) {
+        await client.query(
+          'UPDATE accounts SET sort_order = $1 WHERE id = $2 AND user_id = $3',
+          [sort_order, id, req.user.userId]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+    res.json({ success: true });
   } catch (err) { next(err); }
 });
 
