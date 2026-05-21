@@ -1,9 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Pencil, Trash2, History, Wallet, ClipboardList, GripVertical, ChevronDown, ChevronRight, FolderOpen } from 'lucide-react';
-import {
-  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
-} from 'recharts';
 import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import Modal from '../components/common/Modal';
@@ -33,36 +30,6 @@ const fmtK  = (n) => {
   return Number(n).toFixed(0);
 };
 
-const tooltipStyle = {
-  contentStyle: { background: '#1e1b4b', border: '1px solid #4c1d95', borderRadius: 10, color: '#e0d7ff', fontSize: 12 },
-  itemStyle:    { color: '#c4b5fd' },
-  labelStyle:   { color: '#a78bfa', fontWeight: 600 },
-};
-
-function buildTrendData(accounts, allHistories, homeCurrency, rates) {
-  if (!allHistories.length) return [];
-  const byDate = {};
-  for (const h of allHistories) {
-    if (!byDate[h.recorded_date]) byDate[h.recorded_date] = [];
-    byDate[h.recorded_date].push(h);
-  }
-  const dates = Object.keys(byDate).sort();
-  return dates.map(date => {
-    let assets = 0, liabilities = 0;
-    for (const h of byDate[date]) {
-      const acc = accounts.find(a => a.id === h.account_id);
-      if (!acc) continue;
-      let rate = parseFloat(h.exchange_rate) || 1.0;
-      if (rate === 1.0 && acc.currency !== homeCurrency) {
-        rate = parseFloat(rates?.rates?.[acc.currency]) || 1.0;
-      }
-      const converted = parseFloat(h.balance) / rate;
-      if (acc.type === 'liability') liabilities += converted;
-      else assets += converted;
-    }
-    return { date, total: assets - liabilities, assets, liabilities };
-  });
-}
 
 // ── Add / Edit modal ──────────────────────────────────────────────────────────
 function AccountFormModal({ account, defaultCurrency, groups = [], onSave, onClose }) {
@@ -1388,34 +1355,6 @@ export default function Accounts() {
         </div>
       )}
 
-      {/* Net Worth Trend */}
-      {allHistories.length >= 2 && (() => {
-        const trendData = buildTrendData(accounts, allHistories, homeCurrency, rates);
-        return (
-          <div className="card p-5">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">Net Worth Trend</h3>
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={trendData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="nwGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#7c3aed" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#7c3aed" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" strokeOpacity={0.5} />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={d => d.slice(5)} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={fmtK} width={56} />
-                <Tooltip {...tooltipStyle}
-                  formatter={v => [`≈ ${fmt(v)} ${homeCurrency}`, 'Total']}
-                  labelFormatter={l => `Date: ${l}`} />
-                <Area type="monotone" dataKey="total" stroke="#7c3aed" strokeWidth={2.5}
-                  fill="url(#nwGrad)" dot={{ r: 4, fill: '#7c3aed', strokeWidth: 0 }}
-                  activeDot={{ r: 6, fill: '#7c3aed' }} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        );
-      })()}
 
       {/* Snapshots Table */}
       {allHistories.length > 0 && (
