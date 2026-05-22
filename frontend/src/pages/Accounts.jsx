@@ -739,7 +739,7 @@ function fmtSubmitTime(isoStr) {
   });
 }
 
-function SnapshotsTable({ accounts, allHistories, homeCurrency, rates, onEditSnapshot, onDeleteSnapshot }) {
+function SnapshotsTable({ accounts, allHistories, homeCurrency, rates, onEditSnapshot, onDeleteSnapshot, onDeleteBatch }) {
   const [showCount,  setShowCount]  = useState(SNAPSHOTS_PAGE);
   const [expanded,   setExpanded]   = useState({});   // key → bool
 
@@ -799,38 +799,50 @@ function SnapshotsTable({ accounts, allHistories, homeCurrency, rates, onEditSna
           return (
             <div key={key}>
               {/* Collapsed summary row — always visible, click to toggle */}
-              <button
-                type="button"
-                onClick={() => toggle(key)}
-                className="w-full flex items-center gap-3 px-5 py-3.5
-                  hover:bg-gray-50 dark:hover:bg-slate-700/30 transition-colors text-left"
-              >
-                {/* Chevron */}
-                <span className="shrink-0 text-gray-400 dark:text-slate-500">
-                  {isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                </span>
+              <div className="flex items-center hover:bg-gray-50 dark:hover:bg-slate-700/30 transition-colors">
+                <button
+                  type="button"
+                  onClick={() => toggle(key)}
+                  className="flex-1 flex items-center gap-3 px-5 py-3.5 text-left min-w-0"
+                >
+                  {/* Chevron */}
+                  <span className="shrink-0 text-gray-400 dark:text-slate-500">
+                    {isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                  </span>
 
-                {/* Date */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-800 dark:text-white leading-tight">
-                    {recordedDate}
+                  {/* Date */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800 dark:text-white leading-tight">
+                      {recordedDate}
+                    </p>
+                    {notes && (
+                      <p className="text-xs text-gray-400 dark:text-slate-500 italic truncate mt-0.5">{notes}</p>
+                    )}
+                  </div>
+
+                  {/* Account count badge */}
+                  <span className="shrink-0 text-xs text-gray-400 bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">
+                    {entries.length} acct{entries.length !== 1 ? 's' : ''}
+                  </span>
+
+                  {/* Total */}
+                  <p className="shrink-0 text-sm font-bold text-gray-900 dark:text-white tabular-nums">
+                    {prefix} {fmt(total)}
+                    <span className="text-xs font-normal text-gray-400 ml-1">{homeCurrency}</span>
                   </p>
-                  {notes && (
-                    <p className="text-xs text-gray-400 dark:text-slate-500 italic truncate mt-0.5">{notes}</p>
-                  )}
-                </div>
+                </button>
 
-                {/* Account count badge */}
-                <span className="shrink-0 text-xs text-gray-400 bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">
-                  {entries.length} acct{entries.length !== 1 ? 's' : ''}
-                </span>
-
-                {/* Total */}
-                <p className="shrink-0 text-sm font-bold text-gray-900 dark:text-white tabular-nums">
-                  {prefix} {fmt(total)}
-                  <span className="text-xs font-normal text-gray-400 ml-1">{homeCurrency}</span>
-                </p>
-              </button>
+                {/* Delete whole batch */}
+                <button
+                  type="button"
+                  onClick={() => onDeleteBatch(entries.map(h => h.id))}
+                  className="shrink-0 mr-4 p-1.5 rounded-lg text-gray-300 dark:text-slate-600
+                    hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                  title="Delete snapshot"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
 
               {/* Expanded detail panel */}
               {isOpen && (
@@ -851,13 +863,13 @@ function SnapshotsTable({ accounts, allHistories, homeCurrency, rates, onEditSna
                               {fmt(h.balance)}
                               <span className="text-[10px] font-normal text-gray-400 ml-0.5">{acc.currency}</span>
                             </span>
-                            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-0.5 ml-1">
+                            <div className="flex gap-0.5 ml-1">
                               <button onClick={(e) => { e.stopPropagation(); onEditSnapshot(h, acc); }}
-                                className="p-1 rounded text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-colors">
+                                className="p-1 rounded text-gray-300 dark:text-slate-600 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-colors">
                                 <Pencil size={10} />
                               </button>
                               <button onClick={(e) => { e.stopPropagation(); onDeleteSnapshot(h.id); }}
-                                className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                                className="p-1 rounded text-gray-300 dark:text-slate-600 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
                                 <Trash2 size={10} />
                               </button>
                             </div>
@@ -989,9 +1001,18 @@ export default function Accounts() {
   }
 
   async function handleDeleteBalance(id) {
-    if (!window.confirm('Delete this balance snapshot?')) return;
+    if (!window.confirm('Delete this balance entry?')) return;
     try {
       await deleteBalance(api, id);
+      await fetchAccounts();
+      showToast('Entry deleted');
+    } catch { showToast('Failed to delete entry', 'error'); }
+  }
+
+  async function handleDeleteBatch(ids) {
+    if (!window.confirm(`Delete this entire snapshot (${ids.length} entr${ids.length === 1 ? 'y' : 'ies'})?`)) return;
+    try {
+      for (const id of ids) await deleteBalance(api, id);
       await fetchAccounts();
       showToast('Snapshot deleted');
     } catch { showToast('Failed to delete snapshot', 'error'); }
@@ -1379,6 +1400,7 @@ export default function Accounts() {
           rates={rates}
           onEditSnapshot={(h, acc) => setEditBalanceTarget({ snapshot: h, account: acc })}
           onDeleteSnapshot={handleDeleteBalance}
+          onDeleteBatch={handleDeleteBatch}
         />
       )}
 
