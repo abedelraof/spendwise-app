@@ -740,12 +740,13 @@ function fmtSubmitTime(isoStr) {
 }
 
 function SnapshotsTable({ accounts, allHistories, homeCurrency, rates, onEditSnapshot, onDeleteSnapshot }) {
-  const [showCount, setShowCount] = useState(SNAPSHOTS_PAGE);
+  const [showCount,  setShowCount]  = useState(SNAPSHOTS_PAGE);
+  const [expanded,   setExpanded]   = useState({});   // key → bool
+
   if (!allHistories.length) return null;
 
   const accById = Object.fromEntries(accounts.map(a => [a.id, a]));
 
-  // Group by submission batch (created_at second), sorted newest first
   const byBatch = {};
   for (const h of allHistories) {
     const key = batchKey(h);
@@ -771,6 +772,7 @@ function SnapshotsTable({ accounts, allHistories, homeCurrency, rates, onEditSna
     return { total, allHaveRates };
   }
 
+  const toggle = (key) => setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
   const visible = batches.slice(0, showCount);
 
   return (
@@ -783,77 +785,89 @@ function SnapshotsTable({ accounts, allHistories, homeCurrency, rates, onEditSna
         </span>
       </div>
 
-      {/* Submission groups */}
-      <div className="divide-y divide-gray-50 dark:divide-slate-700/40">
+      {/* Submission rows */}
+      <div className="divide-y divide-gray-100 dark:divide-slate-700/40">
         {visible.map(key => {
-          const entries = byBatch[key];
+          const entries      = byBatch[key];
           const { total, allHaveRates } = computeTotal(entries);
           const prefix       = allHaveRates ? '≈' : '~';
           const notes        = entries.find(h => h.notes)?.notes ?? null;
           const recordedDate = entries[0]?.recorded_date ?? '';
           const submittedAt  = entries[0]?.created_at ?? '';
-          const sameDay      = recordedDate === submittedAt.slice(0, 10);
+          const isOpen       = !!expanded[key];
 
           return (
-            <div key={key} className="p-4 hover:bg-gray-50/60 dark:hover:bg-slate-700/20 transition-colors">
-              {/* Group header */}
-              <div className="flex items-start justify-between gap-2 mb-3">
-                <div>
-                  <p className="text-sm font-semibold text-gray-800 dark:text-white">
-                    {fmtSubmitTime(submittedAt)}
+            <div key={key}>
+              {/* Collapsed summary row — always visible, click to toggle */}
+              <button
+                type="button"
+                onClick={() => toggle(key)}
+                className="w-full flex items-center gap-3 px-5 py-3.5
+                  hover:bg-gray-50 dark:hover:bg-slate-700/30 transition-colors text-left"
+              >
+                {/* Chevron */}
+                <span className="shrink-0 text-gray-400 dark:text-slate-500">
+                  {isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                </span>
+
+                {/* Date */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800 dark:text-white leading-tight">
+                    {recordedDate}
                   </p>
-                  <div className="flex flex-wrap items-center gap-x-2 mt-0.5">
-                    {!sameDay && (
-                      <span className="text-xs text-gray-400 dark:text-slate-500">
-                        For {recordedDate}
-                      </span>
-                    )}
-                    <span className="text-xs text-gray-400 dark:text-slate-500">
-                      {entries.length} account{entries.length !== 1 ? 's' : ''}
-                    </span>
-                    {notes && (
-                      <span className="text-xs text-gray-400 dark:text-slate-500 italic">· {notes}</span>
-                    )}
-                  </div>
+                  {notes && (
+                    <p className="text-xs text-gray-400 dark:text-slate-500 italic truncate mt-0.5">{notes}</p>
+                  )}
                 </div>
-                <p className="text-sm font-bold text-gray-900 dark:text-white tabular-nums shrink-0">
+
+                {/* Account count badge */}
+                <span className="shrink-0 text-xs text-gray-400 bg-gray-100 dark:bg-slate-700 px-2 py-0.5 rounded-full">
+                  {entries.length} acct{entries.length !== 1 ? 's' : ''}
+                </span>
+
+                {/* Total */}
+                <p className="shrink-0 text-sm font-bold text-gray-900 dark:text-white tabular-nums">
                   {prefix} {fmt(total)}
                   <span className="text-xs font-normal text-gray-400 ml-1">{homeCurrency}</span>
                 </p>
-              </div>
+              </button>
 
-              {/* Account entries grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
-                {entries.map(h => {
-                  const acc = accById[h.account_id];
-                  if (!acc) return null;
-                  return (
-                    <div key={h.id}
-                      className="group flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-slate-800/50 hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-colors">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-base shrink-0">{acc.icon}</span>
-                        <span className="text-xs text-gray-600 dark:text-slate-300 font-medium truncate">{acc.name}</span>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <span className="text-xs font-semibold text-gray-900 dark:text-white tabular-nums">
-                          {fmt(h.balance)}
-                          <span className="text-[10px] font-normal text-gray-400 ml-0.5">{acc.currency}</span>
-                        </span>
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-0.5 ml-1">
-                          <button onClick={() => onEditSnapshot(h, acc)}
-                            className="p-1 rounded text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-colors">
-                            <Pencil size={10} />
-                          </button>
-                          <button onClick={() => onDeleteSnapshot(h.id)}
-                            className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
-                            <Trash2 size={10} />
-                          </button>
+              {/* Expanded detail panel */}
+              {isOpen && (
+                <div className="px-5 pb-4 pt-1 bg-gray-50/60 dark:bg-slate-800/30 border-t border-gray-100 dark:border-slate-700/40">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                    {entries.map(h => {
+                      const acc = accById[h.account_id];
+                      if (!acc) return null;
+                      return (
+                        <div key={h.id}
+                          className="group flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-white dark:bg-slate-800/60 hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-colors border border-gray-100 dark:border-slate-700/40">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-base shrink-0">{acc.icon}</span>
+                            <span className="text-xs text-gray-600 dark:text-slate-300 font-medium truncate">{acc.name}</span>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className="text-xs font-semibold text-gray-900 dark:text-white tabular-nums">
+                              {fmt(h.balance)}
+                              <span className="text-[10px] font-normal text-gray-400 ml-0.5">{acc.currency}</span>
+                            </span>
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-0.5 ml-1">
+                              <button onClick={(e) => { e.stopPropagation(); onEditSnapshot(h, acc); }}
+                                className="p-1 rounded text-gray-400 hover:text-brand-500 hover:bg-brand-50 dark:hover:bg-brand-900/20 transition-colors">
+                                <Pencil size={10} />
+                              </button>
+                              <button onClick={(e) => { e.stopPropagation(); onDeleteSnapshot(h.id); }}
+                                className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                                <Trash2 size={10} />
+                              </button>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
