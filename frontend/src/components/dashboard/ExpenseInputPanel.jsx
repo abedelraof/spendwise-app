@@ -12,116 +12,108 @@ const CATEGORIES = ['Food','Transport','Housing','Entertainment','Health','Shopp
 
 function today() { return new Date().toISOString().split('T')[0]; }
 
-/* ── Tiny inline "add new" input ─────────────────────────────────────── */
-function InlineAdd({ placeholder, onConfirm, onCancel, saving }) {
-  const [val, setVal] = useState('');
-  return (
-    <div className="flex items-center gap-1 mt-1.5">
-      <input
-        autoFocus
-        type="text"
-        className="input py-1 text-xs flex-1"
-        placeholder={placeholder}
-        value={val}
-        onChange={e => setVal(e.target.value)}
-        onKeyDown={e => {
-          if (e.key === 'Enter') { e.preventDefault(); val.trim() && onConfirm(val.trim()); }
-          if (e.key === 'Escape') onCancel();
-        }}
-      />
-      <button
-        type="button"
-        disabled={saving || !val.trim()}
-        onClick={() => onConfirm(val.trim())}
-        className="p-1.5 rounded-lg bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-40 transition-colors"
-      >
-        {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-      </button>
-      <button type="button" onClick={onCancel}
-        className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
-        <X size={12} />
-      </button>
-    </div>
-  );
-}
-
 /* ── Manual entry form ───────────────────────────────────────────────── */
 function ManualForm({ categories = [], currency = 'EGP', onAdd, saving, onCreateCategory, onCreateSubcategory }) {
   const catOptions = categories.length ? categories.map(c => c.name) : CATEGORIES;
   const catMap     = Object.fromEntries(categories.map(c => [c.name, c]));
 
   const blank = () => ({
-    amount: '',
-    date: today(),
-    category: catOptions[0] || 'Food',
-    subcategory: '',
-    description: '',
-    notes: '',
-    tags: '',
+    amount: '', date: today(),
+    category: catOptions[0] || 'Food', subcategory: '',
+    description: '', notes: '', tags: '',
   });
 
-  const [form,    setForm]    = useState(blank);
-  const [addingCat,    setAddingCat]    = useState(false);
-  const [addingSubcat, setAddingSubcat] = useState(false);
-  const [catSaving,    setCatSaving]    = useState(false);
-  const [subcatSaving, setSubcatSaving] = useState(false);
+  const [form,          setForm]          = useState(blank);
+  const [addingCat,     setAddingCat]     = useState(false);
+  const [addingSubcat,  setAddingSubcat]  = useState(false);
+  const [newCatName,    setNewCatName]    = useState('');
+  const [newSubcatName, setNewSubcatName] = useState('');
+  const [catSaving,     setCatSaving]     = useState(false);
+  const [subcatSaving,  setSubcatSaving]  = useState(false);
 
-  const set = (field, val) => setForm(f => ({ ...f, [field]: val }));
-
-  const currentCat  = catMap[form.category];
-  const subcats     = currentCat?.subcategories || [];
+  const set        = (field, val) => setForm(f => ({ ...f, [field]: val }));
+  const currentCat = catMap[form.category];
+  const subcats    = currentCat?.subcategories || [];
 
   async function handleSubmit(e) {
     e.preventDefault();
     if (!form.amount || Number(form.amount) <= 0) return;
-    await onAdd({
-      ...form,
-      currency,
-      exchange_rate: 1,
-      amount: parseFloat(form.amount),
-    });
+    await onAdd({ ...form, currency, exchange_rate: 1, amount: parseFloat(form.amount) });
     setForm(blank());
   }
 
-  async function handleCreateCat(name) {
-    if (!onCreateCategory) return;
+  async function handleCreateCat() {
+    if (!newCatName.trim() || !onCreateCategory) return;
     setCatSaving(true);
     try {
-      const newCat = await onCreateCategory(name);
+      const newCat = await onCreateCategory(newCatName.trim());
       if (newCat?.name) set('category', newCat.name);
       setAddingCat(false);
+      setNewCatName('');
     } finally { setCatSaving(false); }
   }
 
-  async function handleCreateSubcat(name) {
-    if (!onCreateSubcategory || !currentCat?.id) return;
+  async function handleCreateSubcat() {
+    if (!newSubcatName.trim() || !onCreateSubcategory || !currentCat?.id) return;
     setSubcatSaving(true);
     try {
-      await onCreateSubcategory(currentCat.id, name);
-      set('subcategory', name);
+      await onCreateSubcategory(currentCat.id, newSubcatName.trim());
+      set('subcategory', newSubcatName.trim());
       setAddingSubcat(false);
+      setNewSubcatName('');
     } finally { setSubcatSaving(false); }
+  }
+
+  /* Shared inline-add row: replaces the select while in "add" mode */
+  function AddRow({ value, onChange, onConfirm, onCancel, isSaving, placeholder }) {
+    return (
+      <div className="flex gap-1.5">
+        <input
+          autoFocus
+          type="text"
+          className="input flex-1 text-xs"
+          placeholder={placeholder}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.preventDefault(); onConfirm(); }
+            if (e.key === 'Escape') onCancel();
+          }}
+        />
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={isSaving || !value.trim()}
+          className="px-2.5 rounded-lg bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-40 transition-colors shrink-0"
+        >
+          {isSaving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-2.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors shrink-0"
+        >
+          <X size={12} />
+        </button>
+      </div>
+    );
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
-      {/* Amount + Date */}
-      <div className="grid grid-cols-2 gap-2">
+
+      {/* Row 1 — Amount + Date */}
+      <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="label">Amount *</label>
           <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-gray-400 dark:text-slate-500 select-none">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-gray-400 dark:text-slate-500 pointer-events-none select-none">
               {currency}
             </span>
             <input
-              type="number"
-              className="input pl-10"
-              placeholder="0.00"
-              step="0.01"
-              min="0.01"
-              value={form.amount}
-              onChange={e => set('amount', e.target.value)}
-              required
+              type="number" className="input pl-10" placeholder="0.00"
+              step="0.01" min="0.01"
+              value={form.amount} onChange={e => set('amount', e.target.value)} required
             />
           </div>
         </div>
@@ -132,91 +124,90 @@ function ManualForm({ categories = [], currency = 'EGP', onAdd, saving, onCreate
         </div>
       </div>
 
-      {/* Category */}
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="label !mb-0">Category</label>
-          {!addingCat && (
-            <button
-              type="button"
-              onClick={() => setAddingCat(true)}
-              className="flex items-center gap-0.5 text-[11px] font-medium text-brand-500 hover:text-brand-600 transition-colors"
-            >
-              <Plus size={11} /> New
-            </button>
+      {/* Row 2 — Category + Subcategory */}
+      <div className="grid grid-cols-2 gap-3">
+
+        {/* Category */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="label !mb-0">Category</label>
+            {!addingCat && (
+              <button type="button"
+                onClick={() => { setAddingCat(true); setNewCatName(''); }}
+                className="flex items-center gap-0.5 text-[11px] font-medium text-brand-500 hover:text-brand-600 transition-colors">
+                <Plus size={11} /> New
+              </button>
+            )}
+          </div>
+          {addingCat ? (
+            <AddRow
+              value={newCatName} onChange={setNewCatName}
+              onConfirm={handleCreateCat} onCancel={() => setAddingCat(false)}
+              isSaving={catSaving} placeholder="Category name…"
+            />
+          ) : (
+            <select className="input" value={form.category}
+              onChange={e => { set('category', e.target.value); set('subcategory', ''); }}>
+              {catOptions.map(c => <option key={c}>{c}</option>)}
+            </select>
           )}
         </div>
-        <select className="input" value={form.category} onChange={e => { set('category', e.target.value); set('subcategory', ''); }}>
-          {catOptions.map(c => <option key={c}>{c}</option>)}
-        </select>
-        {addingCat && (
-          <InlineAdd
-            placeholder="New category name…"
-            saving={catSaving}
-            onConfirm={handleCreateCat}
-            onCancel={() => setAddingCat(false)}
-          />
-        )}
-      </div>
 
-      {/* Subcategory */}
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="label !mb-0">Subcategory</label>
-          {!addingSubcat && (
-            <button
-              type="button"
-              onClick={() => setAddingSubcat(true)}
-              className="flex items-center gap-0.5 text-[11px] font-medium text-brand-500 hover:text-brand-600 transition-colors"
-            >
-              <Plus size={11} /> New
-            </button>
+        {/* Subcategory */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="label !mb-0">Subcategory</label>
+            {!addingSubcat && (
+              <button type="button"
+                onClick={() => { setAddingSubcat(true); setNewSubcatName(''); }}
+                className="flex items-center gap-0.5 text-[11px] font-medium text-brand-500 hover:text-brand-600 transition-colors">
+                <Plus size={11} /> New
+              </button>
+            )}
+          </div>
+          {addingSubcat ? (
+            <AddRow
+              value={newSubcatName} onChange={setNewSubcatName}
+              onConfirm={handleCreateSubcat} onCancel={() => setAddingSubcat(false)}
+              isSaving={subcatSaving} placeholder={`Under "${form.category}"…`}
+            />
+          ) : subcats.length ? (
+            <select className="input" value={form.subcategory}
+              onChange={e => set('subcategory', e.target.value)}>
+              <option value="">— none —</option>
+              {subcats.map(s => <option key={s.name || s} value={s.name || s}>{s.name || s}</option>)}
+            </select>
+          ) : (
+            <input type="text" className="input" placeholder="e.g. Lunch"
+              value={form.subcategory} onChange={e => set('subcategory', e.target.value)} />
           )}
         </div>
-        {subcats.length ? (
-          <select className="input" value={form.subcategory} onChange={e => set('subcategory', e.target.value)}>
-            <option value="">— none —</option>
-            {subcats.map(s => <option key={s.name || s} value={s.name || s}>{s.name || s}</option>)}
-          </select>
-        ) : (
-          <input type="text" className="input" placeholder="e.g. Lunch"
-            value={form.subcategory} onChange={e => set('subcategory', e.target.value)} />
-        )}
-        {addingSubcat && (
-          <InlineAdd
-            placeholder={`New subcategory under "${form.category}"…`}
-            saving={subcatSaving}
-            onConfirm={handleCreateSubcat}
-            onCancel={() => setAddingSubcat(false)}
-          />
-        )}
       </div>
 
-      {/* Description */}
-      <div>
-        <label className="label">Description</label>
-        <input type="text" className="input" placeholder="Short label" maxLength={60}
-          value={form.description} onChange={e => set('description', e.target.value)} />
-      </div>
-
-      {/* Notes + Tags */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      {/* Row 3 — Description + Notes */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="label">Description</label>
+          <input type="text" className="input" placeholder="Short label" maxLength={60}
+            value={form.description} onChange={e => set('description', e.target.value)} />
+        </div>
         <div>
           <label className="label">Notes</label>
-          <input type="text" className="input" placeholder="Optional notes"
+          <input type="text" className="input" placeholder="Optional"
             value={form.notes} onChange={e => set('notes', e.target.value)} />
         </div>
+      </div>
+
+      {/* Row 4 — Tags + Submit */}
+      <div className="grid grid-cols-2 gap-3 items-end">
         <div>
           <label className="label">Tags</label>
           <TagInput value={form.tags} onChange={v => set('tags', v)} />
         </div>
-      </div>
-
-      <div className="flex justify-end pt-1">
         <button
           type="submit"
           disabled={saving || !form.amount}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold
+          className="flex items-center justify-center gap-1.5 w-full px-4 py-2 rounded-xl text-xs font-bold
             bg-gradient-to-r from-brand-500 to-violet-500 text-white shadow-md
             hover:from-brand-600 hover:to-violet-600 active:scale-95 transition-all
             disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
@@ -224,6 +215,7 @@ function ManualForm({ categories = [], currency = 'EGP', onAdd, saving, onCreate
           {saving ? <><Loader2 size={13} className="animate-spin" /> Saving…</> : <><PenLine size={13} /> Add Expense</>}
         </button>
       </div>
+
     </form>
   );
 }
@@ -234,7 +226,7 @@ export default function ExpenseInputPanel({
   categories, currency,
   onCreateCategory, onCreateSubcategory,
 }) {
-  const [tab, setTab] = useState('ai');
+  const [tab,  setTab]  = useState('ai');
   const [text, setText] = useState('');
 
   async function handleParse(e) {
