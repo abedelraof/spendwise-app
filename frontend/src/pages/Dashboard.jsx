@@ -13,7 +13,7 @@ import { getDashboardStats } from '../api/reportsApi';
 import { getExpenses, createExpenses, deleteExpense } from '../api/expensesApi';
 import { parseExpenses } from '../api/aiApi';
 import { getBudgets } from '../api/budgetsApi';
-import { getCategories } from '../api/categoriesApi';
+import { getCategories, createCategory, createSubcategory } from '../api/categoriesApi';
 import { getAccounts, getRates } from '../api/accountsApi';
 import { getSettings } from '../api/settingsApi';
 
@@ -125,6 +125,19 @@ export default function Dashboard() {
     finally { setSaving(false); }
   }
 
+  async function handleCreateCategory(name) {
+    const data = await createCategory(api, { name, icon: '📌', color: '#6366f1' });
+    const fresh = await getCategories(api);
+    setCategories(fresh.categories);
+    return fresh.categories.find(c => c.name === name) || data;
+  }
+
+  async function handleCreateSubcategory(categoryId, name) {
+    await createSubcategory(api, categoryId, name);
+    const fresh = await getCategories(api);
+    setCategories(fresh.categories);
+  }
+
   async function handleDelete(id) {
     try {
       await deleteExpense(api, id);
@@ -155,6 +168,8 @@ export default function Dashboard() {
         saving={saving}
         categories={categories}
         currency={user?.currency}
+        onCreateCategory={handleCreateCategory}
+        onCreateSubcategory={handleCreateSubcategory}
       />
       <StatsBar stats={stats} currency={user?.currency} netWorthData={netWorthData} />
       <BudgetAlerts budgets={budgets} />

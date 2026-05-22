@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Sparkles, Loader2, PenLine } from 'lucide-react';
+import { Sparkles, Loader2, PenLine, Plus, Check, X } from 'lucide-react';
 import TagInput from '../common/TagInput';
 
 const PLACEHOLDER = `Paste expenses in any format:
@@ -12,75 +12,194 @@ const CATEGORIES = ['Food','Transport','Housing','Entertainment','Health','Shopp
 
 function today() { return new Date().toISOString().split('T')[0]; }
 
-function ManualForm({ categories = [], currency = 'EGP', onAdd, saving }) {
+/* ── Tiny inline "add new" input ─────────────────────────────────────── */
+function InlineAdd({ placeholder, onConfirm, onCancel, saving }) {
+  const [val, setVal] = useState('');
+  return (
+    <div className="flex items-center gap-1 mt-1.5">
+      <input
+        autoFocus
+        type="text"
+        className="input py-1 text-xs flex-1"
+        placeholder={placeholder}
+        value={val}
+        onChange={e => setVal(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.preventDefault(); val.trim() && onConfirm(val.trim()); }
+          if (e.key === 'Escape') onCancel();
+        }}
+      />
+      <button
+        type="button"
+        disabled={saving || !val.trim()}
+        onClick={() => onConfirm(val.trim())}
+        className="p-1.5 rounded-lg bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-40 transition-colors"
+      >
+        {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+      </button>
+      <button type="button" onClick={onCancel}
+        className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+        <X size={12} />
+      </button>
+    </div>
+  );
+}
+
+/* ── Manual entry form ───────────────────────────────────────────────── */
+function ManualForm({ categories = [], currency = 'EGP', onAdd, saving, onCreateCategory, onCreateSubcategory }) {
   const catOptions = categories.length ? categories.map(c => c.name) : CATEGORIES;
-  const subcatMap = Object.fromEntries(categories.map(c => [c.name, c.subcategories || []]));
+  const catMap     = Object.fromEntries(categories.map(c => [c.name, c]));
 
   const blank = () => ({
-    amount: '', currency, exchange_rate: 1,
-    date: today(), category: catOptions[0] || 'Food',
-    subcategory: '', description: '', notes: '', tags: '',
+    amount: '',
+    date: today(),
+    category: catOptions[0] || 'Food',
+    subcategory: '',
+    description: '',
+    notes: '',
+    tags: '',
   });
 
-  const [form, setForm] = useState(blank);
+  const [form,    setForm]    = useState(blank);
+  const [addingCat,    setAddingCat]    = useState(false);
+  const [addingSubcat, setAddingSubcat] = useState(false);
+  const [catSaving,    setCatSaving]    = useState(false);
+  const [subcatSaving, setSubcatSaving] = useState(false);
+
   const set = (field, val) => setForm(f => ({ ...f, [field]: val }));
 
-  const subcats = subcatMap[form.category] || [];
+  const currentCat  = catMap[form.category];
+  const subcats     = currentCat?.subcategories || [];
 
   async function handleSubmit(e) {
     e.preventDefault();
     if (!form.amount || Number(form.amount) <= 0) return;
-    await onAdd({ ...form, amount: parseFloat(form.amount), exchange_rate: parseFloat(form.exchange_rate) || 1 });
+    await onAdd({
+      ...form,
+      currency,
+      exchange_rate: 1,
+      amount: parseFloat(form.amount),
+    });
     setForm(blank());
+  }
+
+  async function handleCreateCat(name) {
+    if (!onCreateCategory) return;
+    setCatSaving(true);
+    try {
+      const newCat = await onCreateCategory(name);
+      if (newCat?.name) set('category', newCat.name);
+      setAddingCat(false);
+    } finally { setCatSaving(false); }
+  }
+
+  async function handleCreateSubcat(name) {
+    if (!onCreateSubcategory || !currentCat?.id) return;
+    setSubcatSaving(true);
+    try {
+      await onCreateSubcategory(currentCat.id, name);
+      set('subcategory', name);
+      setAddingSubcat(false);
+    } finally { setSubcatSaving(false); }
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+      {/* Amount + Date */}
+      <div className="grid grid-cols-2 gap-2">
         <div>
           <label className="label">Amount *</label>
-          <input type="number" className="input" placeholder="0.00" step="0.01" min="0.01"
-            value={form.amount} onChange={e => set('amount', e.target.value)} required />
-        </div>
-        <div>
-          <label className="label">Currency</label>
-          <input type="text" className="input" placeholder="EGP"
-            value={form.currency} onChange={e => set('currency', e.target.value)} />
-        </div>
-        <div>
-          <label className="label">Exchange Rate</label>
-          <input type="number" className="input" step="0.0001" min="0.0001"
-            value={form.exchange_rate} onChange={e => set('exchange_rate', e.target.value)} />
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-gray-400 dark:text-slate-500 select-none">
+              {currency}
+            </span>
+            <input
+              type="number"
+              className="input pl-10"
+              placeholder="0.00"
+              step="0.01"
+              min="0.01"
+              value={form.amount}
+              onChange={e => set('amount', e.target.value)}
+              required
+            />
+          </div>
         </div>
         <div>
           <label className="label">Date *</label>
           <input type="date" className="input"
             value={form.date} onChange={e => set('date', e.target.value)} required />
         </div>
-        <div>
-          <label className="label">Category</label>
-          <select className="input" value={form.category} onChange={e => set('category', e.target.value)}>
-            {catOptions.map(c => <option key={c}>{c}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="label">Subcategory</label>
-          {subcats.length ? (
-            <select className="input" value={form.subcategory} onChange={e => set('subcategory', e.target.value)}>
-              <option value="">— none —</option>
-              {subcats.map(s => <option key={s.name || s} value={s.name || s}>{s.name || s}</option>)}
-            </select>
-          ) : (
-            <input type="text" className="input" placeholder="e.g. Lunch"
-              value={form.subcategory} onChange={e => set('subcategory', e.target.value)} />
+      </div>
+
+      {/* Category */}
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="label !mb-0">Category</label>
+          {!addingCat && (
+            <button
+              type="button"
+              onClick={() => setAddingCat(true)}
+              className="flex items-center gap-0.5 text-[11px] font-medium text-brand-500 hover:text-brand-600 transition-colors"
+            >
+              <Plus size={11} /> New
+            </button>
           )}
         </div>
+        <select className="input" value={form.category} onChange={e => { set('category', e.target.value); set('subcategory', ''); }}>
+          {catOptions.map(c => <option key={c}>{c}</option>)}
+        </select>
+        {addingCat && (
+          <InlineAdd
+            placeholder="New category name…"
+            saving={catSaving}
+            onConfirm={handleCreateCat}
+            onCancel={() => setAddingCat(false)}
+          />
+        )}
       </div>
+
+      {/* Subcategory */}
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="label !mb-0">Subcategory</label>
+          {!addingSubcat && (
+            <button
+              type="button"
+              onClick={() => setAddingSubcat(true)}
+              className="flex items-center gap-0.5 text-[11px] font-medium text-brand-500 hover:text-brand-600 transition-colors"
+            >
+              <Plus size={11} /> New
+            </button>
+          )}
+        </div>
+        {subcats.length ? (
+          <select className="input" value={form.subcategory} onChange={e => set('subcategory', e.target.value)}>
+            <option value="">— none —</option>
+            {subcats.map(s => <option key={s.name || s} value={s.name || s}>{s.name || s}</option>)}
+          </select>
+        ) : (
+          <input type="text" className="input" placeholder="e.g. Lunch"
+            value={form.subcategory} onChange={e => set('subcategory', e.target.value)} />
+        )}
+        {addingSubcat && (
+          <InlineAdd
+            placeholder={`New subcategory under "${form.category}"…`}
+            saving={subcatSaving}
+            onConfirm={handleCreateSubcat}
+            onCancel={() => setAddingSubcat(false)}
+          />
+        )}
+      </div>
+
+      {/* Description */}
       <div>
         <label className="label">Description</label>
         <input type="text" className="input" placeholder="Short label" maxLength={60}
           value={form.description} onChange={e => set('description', e.target.value)} />
       </div>
+
+      {/* Notes + Tags */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div>
           <label className="label">Notes</label>
@@ -92,13 +211,14 @@ function ManualForm({ categories = [], currency = 'EGP', onAdd, saving }) {
           <TagInput value={form.tags} onChange={v => set('tags', v)} />
         </div>
       </div>
+
       <div className="flex justify-end pt-1">
         <button
           type="submit"
           disabled={saving || !form.amount}
           className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold
-            bg-gradient-to-r from-violet-500 to-brand-500 text-white shadow-md
-            hover:from-violet-600 hover:to-brand-600 active:scale-95 transition-all
+            bg-gradient-to-r from-brand-500 to-violet-500 text-white shadow-md
+            hover:from-brand-600 hover:to-violet-600 active:scale-95 transition-all
             disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
         >
           {saving ? <><Loader2 size={13} className="animate-spin" /> Saving…</> : <><PenLine size={13} /> Add Expense</>}
@@ -108,7 +228,12 @@ function ManualForm({ categories = [], currency = 'EGP', onAdd, saving }) {
   );
 }
 
-export default function ExpenseInputPanel({ onParse, onAdd, loading, saving, categories, currency }) {
+/* ── Main panel ──────────────────────────────────────────────────────── */
+export default function ExpenseInputPanel({
+  onParse, onAdd, loading, saving,
+  categories, currency,
+  onCreateCategory, onCreateSubcategory,
+}) {
   const [tab, setTab] = useState('ai');
   const [text, setText] = useState('');
 
@@ -122,40 +247,36 @@ export default function ExpenseInputPanel({ onParse, onAdd, loading, saving, cat
   return (
     <div className="card overflow-hidden">
 
-      {/* Vibrant gradient hero header */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-violet-600 via-brand-600 to-indigo-500 px-5 pt-5 pb-14">
-        {/* Decorative blobs */}
+      {/* Gradient hero header */}
+      <div className="relative overflow-hidden bg-gradient-to-r from-brand-500 to-violet-500 px-5 pt-5 pb-14">
         <div className="absolute -top-6 -right-6 w-28 h-28 bg-white/10 rounded-full blur-2xl pointer-events-none" />
         <div className="absolute bottom-0 left-6 w-20 h-20 bg-white/10 rounded-full blur-xl pointer-events-none" />
-        <div className="absolute top-3 right-20 w-6 h-6 bg-yellow-300/30 rounded-full blur-md pointer-events-none" />
+        <div className="absolute top-3 right-20 w-6 h-6 bg-white/20 rounded-full blur-md pointer-events-none" />
 
         <div className="relative flex items-center gap-3">
-          {/* Glowing icon */}
           <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center ring-1 ring-white/30 shadow-lg shrink-0">
             <Sparkles size={19} className="text-white" />
           </div>
-
           <div className="min-w-0">
             <h3 className="text-base font-bold text-white tracking-tight leading-tight">Log Expense</h3>
             <p className="text-[11px] text-white/60 mt-0.5">AI-powered · any format</p>
           </div>
-
           <div className="ml-auto shrink-0">
-            <span className="text-[10px] font-semibold bg-white/20 text-white px-2.5 py-1 rounded-full backdrop-blur-sm ring-1 ring-white/20">
+            <span className="text-[10px] font-semibold bg-white/20 text-white px-2.5 py-1 rounded-full ring-1 ring-white/20">
               ✦ Smart Parse
             </span>
           </div>
         </div>
       </div>
 
-      {/* Floating pill tab switcher — overlaps gradient */}
+      {/* Floating pill tab switcher */}
       <div className="px-4 -mt-6 mb-5 relative z-10">
         <div className="flex gap-1 p-1 bg-white dark:bg-slate-800 rounded-2xl shadow-lg ring-1 ring-gray-100 dark:ring-slate-700">
           <button
             onClick={() => setTab('ai')}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all ${
               tab === 'ai'
-                ? 'bg-gradient-to-r from-violet-500 to-brand-500 text-white shadow-sm'
+                ? 'bg-gradient-to-r from-brand-500 to-violet-500 text-white shadow-sm'
                 : 'text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-300'
             }`}
           >
@@ -165,7 +286,7 @@ export default function ExpenseInputPanel({ onParse, onAdd, loading, saving, cat
             onClick={() => setTab('manual')}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all ${
               tab === 'manual'
-                ? 'bg-gradient-to-r from-violet-500 to-brand-500 text-white shadow-sm'
+                ? 'bg-gradient-to-r from-brand-500 to-violet-500 text-white shadow-sm'
                 : 'text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-300'
             }`}
           >
@@ -184,7 +305,7 @@ export default function ExpenseInputPanel({ onParse, onAdd, loading, saving, cat
                 font-mono text-xs leading-relaxed resize-y
                 text-gray-800 dark:text-slate-200
                 px-3.5 py-3
-                focus:outline-none focus:ring-2 focus:ring-violet-400/40 focus:border-violet-400
+                focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400
                 placeholder:text-gray-400 dark:placeholder:text-slate-500
                 transition-all"
               rows={5}
@@ -201,8 +322,8 @@ export default function ExpenseInputPanel({ onParse, onAdd, loading, saving, cat
                 type="submit"
                 disabled={loading || !text.trim()}
                 className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold
-                  bg-gradient-to-r from-violet-500 to-brand-500 text-white shadow-md
-                  hover:from-violet-600 hover:to-brand-600 active:scale-95 transition-all
+                  bg-gradient-to-r from-brand-500 to-violet-500 text-white shadow-md
+                  hover:from-brand-600 hover:to-violet-600 active:scale-95 transition-all
                   disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
               >
                 {loading
@@ -212,7 +333,14 @@ export default function ExpenseInputPanel({ onParse, onAdd, loading, saving, cat
             </div>
           </form>
         ) : (
-          <ManualForm categories={categories} currency={currency} onAdd={onAdd} saving={saving} />
+          <ManualForm
+            categories={categories}
+            currency={currency}
+            onAdd={onAdd}
+            saving={saving}
+            onCreateCategory={onCreateCategory}
+            onCreateSubcategory={onCreateSubcategory}
+          />
         )}
       </div>
     </div>
