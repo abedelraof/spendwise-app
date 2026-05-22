@@ -8,7 +8,7 @@ export default function LatestTransactions({ expenses, onDelete }) {
       <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-slate-700/60">
         <h3 className="font-semibold text-gray-900 dark:text-white text-sm">Latest Transactions</h3>
         <Link
-          to="/transactions"
+          to="/app/transactions"
           className="flex items-center gap-1 text-xs font-medium text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 transition-colors"
         >
           View all <ArrowRight size={12} />
