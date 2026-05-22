@@ -292,15 +292,18 @@ export default function ExpenseInputPanel({
         {tab === 'ai' ? (
           <form onSubmit={handleParse} className="space-y-3">
             <textarea
-              className="w-full rounded-xl border border-gray-200 dark:border-slate-700
-                bg-gray-50 dark:bg-slate-800/60
-                text-sm leading-7 tracking-wide resize-y
-                text-gray-800 dark:text-slate-100
-                px-4 py-3.5
-                focus:outline-none focus:ring-2 focus:ring-brand-400/50 focus:border-brand-400
+              className="w-full rounded-2xl border-2 border-gray-200 dark:border-slate-700
+                bg-gray-50 dark:bg-slate-800/40
+                text-xl leading-8 tracking-wide resize-y
+                text-gray-900 dark:text-white font-medium
+                px-5 py-4
+                focus:outline-none focus:border-brand-400 dark:focus:border-brand-500
+                focus:ring-4 focus:ring-brand-400/20 dark:focus:ring-brand-500/20
                 focus:bg-white dark:focus:bg-slate-800
-                placeholder:text-gray-300 dark:placeholder:text-slate-600 placeholder:text-xs placeholder:leading-relaxed placeholder:tracking-normal placeholder:font-mono
-                transition-all duration-200 ease-in-out"
+                focus:shadow-lg focus:shadow-brand-500/10
+                placeholder:text-gray-300 dark:placeholder:text-slate-600
+                placeholder:text-sm placeholder:leading-relaxed placeholder:tracking-normal placeholder:font-mono placeholder:font-normal
+                transition-all duration-300 ease-in-out"
               rows={5}
               placeholder={PLACEHOLDER}
               value={text}
