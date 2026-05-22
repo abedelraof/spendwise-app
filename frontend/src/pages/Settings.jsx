@@ -1,15 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Bot, Globe, FolderOpen, PieChart, Upload, CheckCircle, Trash2, ShieldAlert } from 'lucide-react';
+import { Bot, Globe, FolderOpen, Upload, CheckCircle, Trash2, ShieldAlert } from 'lucide-react';
 import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import { getSettings, updateSettings } from '../api/settingsApi';
 import { getCategories } from '../api/categoriesApi';
-import { getBudgets } from '../api/budgetsApi';
 import { showToast } from '../components/common/Toast';
 import Spinner from '../components/common/Spinner';
 import Modal from '../components/common/Modal';
 import CategoriesManager from '../components/settings/CategoriesManager';
-import BudgetManager from '../components/settings/BudgetManager';
 import CsvImport from '../components/settings/CsvImport';
 
 const CURRENCIES = ['EGP','USD','EUR','GBP','ILS','SAR','AED','JPY','CAD','AUD','CHF','INR'];
@@ -114,17 +112,15 @@ export default function Settings() {
   const [settings, setSettings] = useState({ currency: 'EGP', accounts_currency: null, hasApiKey: false, hasPin: false, theme: 'light' });
   const [apiKey, setApiKey]       = useState('');
   const [categories, setCategories] = useState([]);
-  const [budgets, setBudgets]     = useState([]);
   const [loading, setLoading]     = useState(true);
   const [saving, setSaving]       = useState(null);
   const [showClearModal, setShowClearModal] = useState(false);
 
   async function fetchAll() {
     try {
-      const [s, c, b] = await Promise.all([getSettings(api), getCategories(api), getBudgets(api)]);
+      const [s, c] = await Promise.all([getSettings(api), getCategories(api)]);
       setSettings(s);
       setCategories(c.categories);
-      setBudgets(b.budgets);
     } catch { showToast('Failed to load settings', 'error'); }
     setLoading(false);
   }
@@ -227,11 +223,6 @@ export default function Settings() {
       {/* Categories */}
       <SectionCard icon={FolderOpen} title="Categories">
         <CategoriesManager categories={categories} api={api} onRefresh={fetchAll} />
-      </SectionCard>
-
-      {/* Budgets */}
-      <SectionCard icon={PieChart} title="Monthly Budgets">
-        <BudgetManager budgets={budgets} categories={categories} api={api} onRefresh={fetchAll} />
       </SectionCard>
 
       {/* CSV Import */}
