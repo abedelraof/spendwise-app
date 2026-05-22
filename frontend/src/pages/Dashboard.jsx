@@ -171,7 +171,7 @@ export default function Dashboard() {
         onCreateCategory={handleCreateCategory}
         onCreateSubcategory={handleCreateSubcategory}
       />
-      <StatsBar stats={stats} currency={user?.currency} netWorthData={netWorthData} />
+      <StatsBar stats={stats} currency={user?.currency} />
       <BudgetAlerts budgets={budgets} />
       <MonthlyInsight />
       <LatestTransactions expenses={expenses} onDelete={handleDelete} />
