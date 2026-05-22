@@ -294,12 +294,13 @@ export default function ExpenseInputPanel({
             <textarea
               className="w-full rounded-xl border border-gray-200 dark:border-slate-700
                 bg-gray-50 dark:bg-slate-800/60
-                font-mono text-xs leading-relaxed resize-y
-                text-gray-800 dark:text-slate-200
-                px-3.5 py-3
-                focus:outline-none focus:ring-2 focus:ring-brand-400/40 focus:border-brand-400
-                placeholder:text-gray-400 dark:placeholder:text-slate-500
-                transition-all"
+                text-sm leading-7 tracking-wide resize-y
+                text-gray-800 dark:text-slate-100
+                px-4 py-3.5
+                focus:outline-none focus:ring-2 focus:ring-brand-400/50 focus:border-brand-400
+                focus:bg-white dark:focus:bg-slate-800
+                placeholder:text-gray-300 dark:placeholder:text-slate-600 placeholder:text-xs placeholder:leading-relaxed placeholder:tracking-normal placeholder:font-mono
+                transition-all duration-200 ease-in-out"
               rows={5}
               placeholder={PLACEHOLDER}
               value={text}
