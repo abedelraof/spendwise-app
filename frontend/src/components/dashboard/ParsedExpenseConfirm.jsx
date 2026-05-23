@@ -51,6 +51,18 @@ export default function ParsedExpenseConfirm({ expenses: initial, categories = [
   const subcats  = e ? (subcatMap[e.category] || []) : [];
   const progress = total === 0 ? 100 : Math.round((current / total) * 100);
 
+  // Detect AI-suggested new category / subcategory
+  const isNewCategory    = e ? (!!e.category    && !catOptions.some(c => c.toLowerCase() === e.category.toLowerCase())) : false;
+  const isNewSubcategory = e ? (!!e.subcategory && subcats.length > 0 && !subcats.some(s => s.name?.toLowerCase() === e.subcategory.toLowerCase())) : false;
+
+  // Effective options — put AI-suggested new value at top so it stays selected
+  const effectiveCatOptions = isNewCategory
+    ? [e.category, ...catOptions]
+    : catOptions;
+  const effectiveSubcats = isNewSubcategory && subcats.length > 0
+    ? [{ id: '__new__', name: e.subcategory }, ...subcats]
+    : subcats;
+
   async function handleSave() {
     setIsSaving(true);
     try {
@@ -186,12 +198,20 @@ export default function ParsedExpenseConfirm({ expenses: initial, categories = [
           </div>
           {expenses.length > 0 && (
             <div className="w-full space-y-1.5 max-h-36 overflow-y-auto">
-              {expenses.map((ex, i) => (
-                <div key={i} className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50 dark:bg-slate-700/50 text-xs">
-                  <span className="text-gray-600 dark:text-slate-300 truncate mr-2">{ex.description || ex.category}</span>
-                  <span className="font-semibold text-gray-900 dark:text-white shrink-0">{ex.amount} {ex.currency}</span>
-                </div>
-              ))}
+              {expenses.map((ex, i) => {
+                const catIsNew = !!ex.category && !catOptions.some(c => c.toLowerCase() === ex.category.toLowerCase());
+                return (
+                  <div key={i} className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-50 dark:bg-slate-700/50 text-xs">
+                    <span className="text-gray-600 dark:text-slate-300 truncate mr-2">{ex.description || ex.category}</span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {catIsNew && (
+                        <span className="text-[10px] text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded-full font-medium">✨ {ex.category}</span>
+                      )}
+                      <span className="font-semibold text-gray-900 dark:text-white">{ex.amount} {ex.currency}</span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
           <div className="flex gap-3 w-full pt-1">
@@ -239,31 +259,65 @@ export default function ParsedExpenseConfirm({ expenses: initial, categories = [
             </div>
           </div>
 
-          {/* Date + Category + Subcategory */}
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="label">Date</label>
-              <input type="date" className="input h-9" value={e.date}
-                onChange={ev => update('date', ev.target.value)} />
-            </div>
-            <div>
-              <label className="label">Category</label>
-              <select className="input h-9" value={e.category} onChange={ev => update('category', ev.target.value)}>
-                {catOptions.map(c => <option key={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="label">Subcategory</label>
-              {subcats.length ? (
-                <select className="input h-9" value={e.subcategory || ''} onChange={ev => update('subcategory', ev.target.value)}>
-                  <option value="">— none —</option>
-                  {subcats.map(s => <option key={s.id || s.name} value={s.name}>{s.name}</option>)}
-                </select>
-              ) : (
-                <input type="text" className="input h-9" value={e.subcategory || ''}
-                  onChange={ev => update('subcategory', ev.target.value)} />
+          {/* Date */}
+          <div>
+            <label className="label">Date</label>
+            <input type="date" className="input h-9" value={e.date}
+              onChange={ev => update('date', ev.target.value)} />
+          </div>
+
+          {/* Category */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="label !mb-0">Category</label>
+              {isNewCategory && (
+                <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">
+                  ✨ New category
+                </span>
               )}
             </div>
+            <select
+              className={`input h-9 ${isNewCategory ? 'border-amber-400 dark:border-amber-500 focus:ring-amber-400/30' : ''}`}
+              value={e.category}
+              onChange={ev => { update('category', ev.target.value); update('subcategory', ''); }}
+            >
+              {effectiveCatOptions.map(c => <option key={c}>{c}</option>)}
+            </select>
+            {isNewCategory && (
+              <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1 leading-snug">
+                <strong>"{e.category}"</strong> will be created as a new category — or select an existing one above.
+              </p>
+            )}
+          </div>
+
+          {/* Subcategory */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="label !mb-0">Subcategory</label>
+              {isNewSubcategory && (
+                <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">
+                  ✨ New subcategory
+                </span>
+              )}
+            </div>
+            {effectiveSubcats.length ? (
+              <select
+                className={`input h-9 ${isNewSubcategory ? 'border-amber-400 dark:border-amber-500 focus:ring-amber-400/30' : ''}`}
+                value={e.subcategory || ''}
+                onChange={ev => update('subcategory', ev.target.value)}
+              >
+                <option value="">— none —</option>
+                {effectiveSubcats.map(s => <option key={s.id || s.name} value={s.name}>{s.name}</option>)}
+              </select>
+            ) : (
+              <input type="text" className="input h-9" value={e.subcategory || ''}
+                onChange={ev => update('subcategory', ev.target.value)} placeholder="Optional" />
+            )}
+            {isNewSubcategory && (
+              <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1 leading-snug">
+                <strong>"{e.subcategory}"</strong> will be created under <strong>{e.category}</strong> — or select an existing one above.
+              </p>
+            )}
           </div>
 
           {/* Description */}
