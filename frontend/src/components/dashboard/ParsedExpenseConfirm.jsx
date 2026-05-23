@@ -237,107 +237,91 @@ export default function ParsedExpenseConfirm({ expenses: initial, categories = [
         </div>
       ) : (
         /* Single expense form */
-        <div className="space-y-4">
+        <div className="space-y-2.5">
           {e.raw_text && (
             <p className="text-[11px] text-gray-400 dark:text-slate-500 bg-gray-50 dark:bg-slate-700/50 rounded-lg px-3 py-1.5 truncate">
               "{e.raw_text}"
             </p>
           )}
 
-          {/* Amount + Currency */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
+          {/* Amount + Currency + Date */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="col-span-1">
               <label className="label">Amount</label>
-              <input type="number" className="input h-9 text-lg font-bold" step="0.01"
+              <input type="number" className="input h-8 text-sm font-bold" step="0.01"
                 value={e.amount} onChange={ev => update('amount', parseFloat(ev.target.value))} />
             </div>
             <div>
               <label className="label">Currency</label>
-              <select className="input h-9" value={e.currency} onChange={ev => update('currency', ev.target.value)}>
+              <select className="input h-8 text-sm" value={e.currency} onChange={ev => update('currency', ev.target.value)}>
                 {CURRENCIES.map(c => <option key={c}>{c}</option>)}
               </select>
             </div>
-          </div>
-
-          {/* Date */}
-          <div>
-            <label className="label">Date</label>
-            <input type="date" className="input h-9" value={e.date}
-              onChange={ev => update('date', ev.target.value)} />
-          </div>
-
-          {/* Category */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="label !mb-0">Category</label>
-              {isNewCategory && (
-                <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">
-                  ✨ New category
-                </span>
-              )}
+            <div>
+              <label className="label">Date</label>
+              <input type="date" className="input h-8 text-sm" value={e.date}
+                onChange={ev => update('date', ev.target.value)} />
             </div>
-            <select
-              className={`input h-9 ${isNewCategory ? 'border-amber-400 dark:border-amber-500 focus:ring-amber-400/30' : ''}`}
-              value={e.category}
-              onChange={ev => { update('category', ev.target.value); update('subcategory', ''); }}
-            >
-              {effectiveCatOptions.map(c => <option key={c}>{c}</option>)}
-            </select>
-            {isNewCategory && (
-              <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1 leading-snug">
-                <strong>"{e.category}"</strong> will be created as a new category — or select an existing one above.
-              </p>
-            )}
           </div>
 
-          {/* Subcategory */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="label !mb-0">Subcategory</label>
-              {isNewSubcategory && (
-                <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">
-                  ✨ New subcategory
-                </span>
-              )}
-            </div>
-            {effectiveSubcats.length ? (
+          {/* Category + Subcategory */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="label !mb-0">Category</label>
+                {isNewCategory && (
+                  <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded-full">✨ new</span>
+                )}
+              </div>
               <select
-                className={`input h-9 ${isNewSubcategory ? 'border-amber-400 dark:border-amber-500 focus:ring-amber-400/30' : ''}`}
-                value={e.subcategory || ''}
-                onChange={ev => update('subcategory', ev.target.value)}
+                className={`input h-8 text-sm ${isNewCategory ? 'border-amber-400 dark:border-amber-500' : ''}`}
+                value={e.category}
+                onChange={ev => { update('category', ev.target.value); update('subcategory', ''); }}
               >
-                <option value="">— none —</option>
-                {effectiveSubcats.map(s => <option key={s.id || s.name} value={s.name}>{s.name}</option>)}
+                {effectiveCatOptions.map(c => <option key={c}>{c}</option>)}
               </select>
-            ) : (
-              <input type="text" className="input h-9" value={e.subcategory || ''}
-                onChange={ev => update('subcategory', ev.target.value)} placeholder="Optional" />
-            )}
-            {isNewSubcategory && (
-              <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1 leading-snug">
-                <strong>"{e.subcategory}"</strong> will be created under <strong>{e.category}</strong> — or select an existing one above.
-              </p>
-            )}
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="label !mb-0">Subcategory</label>
+                {isNewSubcategory && (
+                  <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded-full">✨ new</span>
+                )}
+              </div>
+              {effectiveSubcats.length ? (
+                <select
+                  className={`input h-8 text-sm ${isNewSubcategory ? 'border-amber-400 dark:border-amber-500' : ''}`}
+                  value={e.subcategory || ''}
+                  onChange={ev => update('subcategory', ev.target.value)}
+                >
+                  <option value="">— none —</option>
+                  {effectiveSubcats.map(s => <option key={s.id || s.name} value={s.name}>{s.name}</option>)}
+                </select>
+              ) : (
+                <input type="text" className="input h-8 text-sm" value={e.subcategory || ''}
+                  onChange={ev => update('subcategory', ev.target.value)} placeholder="Optional" />
+              )}
+            </div>
           </div>
 
-          {/* Description */}
-          <div>
-            <label className="label">Description</label>
-            <input type="text" className="input h-9" value={e.description || ''}
-              onChange={ev => update('description', ev.target.value)} maxLength={60} />
-          </div>
-
-          {/* Notes + Tags */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Description + Notes */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="label">Description</label>
+              <input type="text" className="input h-8 text-sm" value={e.description || ''}
+                onChange={ev => update('description', ev.target.value)} maxLength={60} placeholder="Label" />
+            </div>
             <div>
               <label className="label">Notes</label>
-              <input type="text" className="input h-9" value={e.notes || ''}
-                onChange={ev => update('notes', ev.target.value)} />
+              <input type="text" className="input h-8 text-sm" value={e.notes || ''}
+                onChange={ev => update('notes', ev.target.value)} placeholder="Optional" />
             </div>
-            <div>
-              <label className="label">Tags</label>
-              <TagInput value={e.tags || ''} onChange={v => update('tags', v)} />
-            </div>
+          </div>
+
+          {/* Tags */}
+          <div>
+            <label className="label">Tags</label>
+            <TagInput value={e.tags || ''} onChange={v => update('tags', v)} />
           </div>
 
           {/* Actions */}
