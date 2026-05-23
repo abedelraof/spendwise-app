@@ -169,9 +169,11 @@ function ManualForm({ categories = [], currency = 'EGP', onAdd, saving, onCreate
           />
         </div>
       </div>
-      <button type="submit" disabled={saving || !form.amount} className={submitCls}>
-        {saving ? <><Loader2 size={13} className="animate-spin" /> Saving…</> : <><PenLine size={13} /> Add Expense</>}
-      </button>
+      <div className="flex justify-end">
+        <button type="submit" disabled={saving || !form.amount} className={`${submitCls} !w-1/2`}>
+          {saving ? <><Loader2 size={13} className="animate-spin" /> Saving…</> : <><PenLine size={13} /> Add Expense</>}
+        </button>
+      </div>
     </form>
   );
 }
