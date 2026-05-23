@@ -9,12 +9,18 @@ export default function Modal({ open, onClose, title, children, size = 'md', hid
   }, [open, onClose]);
 
   if (!open) return null;
-  const widths = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl', xl: 'max-w-5xl' };
+  const widths = { sm: 'sm:max-w-md', md: 'sm:max-w-xl', lg: 'sm:max-w-3xl', xl: 'sm:max-w-5xl' };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4 pb-4 bg-black/50 backdrop-blur-sm animate-fade-in overflow-hidden !mt-0">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:px-4 sm:pb-4 bg-black/50 backdrop-blur-sm animate-fade-in overflow-hidden !mt-0">
       {backdrop}
-      <div className={`card w-full ${widths[size]} flex flex-col shadow-2xl animate-scale-in`}>
+      <div className={`w-full ${widths[size]} flex flex-col shadow-2xl bg-white dark:bg-slate-800 h-[92dvh] sm:h-auto sm:max-h-[90vh] rounded-t-2xl sm:rounded-xl animate-slide-up-full sm:animate-scale-in`}>
+
+        {/* Mobile drag handle — hidden on desktop */}
+        <div className="flex justify-center pt-3 pb-1 shrink-0 sm:hidden">
+          <div className="w-10 h-1 rounded-full bg-gray-300 dark:bg-slate-600" />
+        </div>
+
         {!hideHeader && (
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-slate-700/60 shrink-0">
             <h2 className="text-base font-semibold text-gray-900 dark:text-white">{title}</h2>
