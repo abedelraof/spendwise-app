@@ -21,24 +21,25 @@ function greeting() {
 function SummaryStrip({ stats, currency }) {
   if (!stats) return null;
   const fmt = n => Number(n ?? 0).toLocaleString('en', { maximumFractionDigits: 0 });
+  const month = new Date().toLocaleString('en', { month: 'long' });
+  const hasData = stats.transactionCount > 0;
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-3 rounded-xl
-      bg-brand-50 dark:bg-brand-900/20 border border-brand-100 dark:border-brand-800/30 text-sm">
-      <span className="font-bold text-brand-700 dark:text-brand-300">
-        {fmt(stats.totalThisMonth)} {currency}
-      </span>
-      <span className="text-gray-300 dark:text-slate-600 hidden sm:inline">·</span>
-      <span className="text-gray-500 dark:text-slate-400">
-        Top: <span className="font-medium text-gray-800 dark:text-slate-200">{stats.topCategory || '—'}</span>
-      </span>
-      <span className="text-gray-300 dark:text-slate-600 hidden sm:inline">·</span>
-      <span className="text-gray-500 dark:text-slate-400">
-        Avg: <span className="font-medium text-gray-800 dark:text-slate-200">{fmt(stats.dailyAverage)} {currency}/day</span>
-      </span>
-      <span className="text-gray-300 dark:text-slate-600 hidden sm:inline">·</span>
-      <span className="text-gray-500 dark:text-slate-400">
-        <span className="font-medium text-gray-800 dark:text-slate-200">{stats.transactionCount}</span> transactions
-      </span>
+    <div className="px-4 py-3.5 rounded-xl bg-brand-50 dark:bg-brand-900/20 border border-brand-100 dark:border-brand-800/30">
+      {hasData ? (
+        <p className="text-sm text-gray-600 dark:text-slate-300 leading-relaxed">
+          In <span className="font-semibold text-gray-800 dark:text-slate-100">{month}</span> you've spent{' '}
+          <span className="font-bold text-brand-600 dark:text-brand-400">{fmt(stats.totalThisMonth)} {currency}</span>{' '}
+          across <span className="font-semibold text-gray-800 dark:text-slate-100">{stats.transactionCount} transaction{stats.transactionCount !== 1 ? 's' : ''}</span>.{' '}
+          {stats.topCategory && (
+            <>Your biggest spending category is <span className="font-semibold text-gray-800 dark:text-slate-100">{stats.topCategory}</span>, </>
+          )}
+          averaging <span className="font-semibold text-gray-800 dark:text-slate-100">{fmt(stats.dailyAverage)} {currency}</span> per day.
+        </p>
+      ) : (
+        <p className="text-sm text-gray-500 dark:text-slate-400">
+          No expenses recorded in <span className="font-semibold text-gray-700 dark:text-slate-300">{month}</span> yet. Start by logging one below.
+        </p>
+      )}
     </div>
   );
 }
