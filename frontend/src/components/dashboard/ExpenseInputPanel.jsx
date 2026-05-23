@@ -166,7 +166,14 @@ function ManualForm({ categories = [], currency = 'EGP', onAdd, saving, onCreate
       <div className="grid grid-cols-2 gap-3 items-end">
         <div>
           <label className={labelCls}>Tags</label>
-          <TagInput value={form.tags} onChange={v => set('tags', v)} />
+          <TagInput value={form.tags} onChange={v => set('tags', v)}
+            wrapperClassName={isDark4
+              ? 'flex flex-wrap gap-1 items-center border border-gray-700 bg-gray-800 rounded-lg px-3 py-2 min-h-[38px] focus-within:ring-2 focus-within:ring-emerald-500/40 focus-within:border-emerald-500 transition-all duration-150'
+              : undefined}
+            tagClassName={isDark4
+              ? 'flex items-center gap-1 bg-emerald-500/15 text-emerald-400 text-xs px-2.5 py-0.5 rounded-full font-mono font-medium ring-1 ring-emerald-500/30'
+              : undefined}
+          />
         </div>
         <button type="submit" disabled={saving || !form.amount} className={submitCls}>
           {saving ? <><Loader2 size={13} className="animate-spin" /> Saving…</> : <><PenLine size={13} /> Add Expense</>}
@@ -234,7 +241,7 @@ function Style1({ tab, setTab, text, setText, loading, saving, onParse, categori
       <div className="px-5 pb-5">
         {tab === 'ai' ? (
           <AiForm text={text} setText={setText} loading={loading} onParse={onParse}
-            textareaCls="w-full rounded-2xl border-2 border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/40 text-xl leading-8 tracking-wide resize-y text-gray-900 dark:text-white font-medium px-5 py-4 focus:outline-none focus:border-brand-400 dark:focus:border-brand-500 focus:ring-4 focus:ring-brand-400/20 focus:bg-white dark:focus:bg-slate-800 focus:shadow-lg focus:shadow-brand-500/10 placeholder:text-gray-300 dark:placeholder:text-slate-600 placeholder:text-sm placeholder:leading-relaxed placeholder:tracking-normal placeholder:font-mono placeholder:font-normal transition-all duration-300"
+            textareaCls="w-full rounded-2xl border-2 border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/40 text-xl leading-8 tracking-wide resize-y overflow-y-auto text-gray-900 dark:text-white font-medium px-5 py-4 focus:outline-none focus:border-brand-400 dark:focus:border-brand-500 focus:ring-4 focus:ring-brand-400/20 focus:bg-white dark:focus:bg-slate-800 focus:shadow-lg focus:shadow-brand-500/10 placeholder:text-gray-300 dark:placeholder:text-slate-600 placeholder:text-sm placeholder:leading-relaxed placeholder:tracking-normal placeholder:font-mono placeholder:font-normal transition-all duration-300"
             btnCls="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-violet-500 to-brand-500 text-white shadow-md hover:from-violet-600 hover:to-brand-600 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             hintCls="text-[11px] text-gray-400 dark:text-slate-500 leading-relaxed"
             codeCls="bg-gray-100 dark:bg-slate-700 px-1 py-0.5 rounded text-[10px]"
@@ -284,7 +291,7 @@ function Style2({ tab, setTab, text, setText, loading, saving, onParse, categori
       <div className="relative px-5 py-5">
         {tab === 'ai' ? (
           <AiForm text={text} setText={setText} loading={loading} onParse={onParse}
-            textareaCls="w-full rounded-xl border border-white/10 bg-white/5 text-slate-200 font-medium text-lg leading-7 tracking-wide resize-y px-4 py-3.5 focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 focus:bg-white/8 placeholder:text-slate-600 placeholder:text-sm placeholder:font-mono placeholder:font-normal placeholder:leading-relaxed placeholder:tracking-normal transition-all duration-300"
+            textareaCls="w-full rounded-xl border border-white/10 bg-white/5 text-slate-200 font-medium text-lg leading-7 tracking-wide resize-y overflow-y-auto px-4 py-3.5 focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 focus:bg-white/8 placeholder:text-slate-600 placeholder:text-sm placeholder:font-mono placeholder:font-normal placeholder:leading-relaxed placeholder:tracking-normal transition-all duration-300"
             btnCls="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-cyan-500 text-slate-900 hover:bg-cyan-400 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-cyan-500/30"
             hintCls="text-[11px] text-slate-500 leading-relaxed"
             codeCls="bg-white/10 px-1 py-0.5 rounded text-[10px] text-cyan-400"
@@ -335,7 +342,7 @@ function Style3({ tab, setTab, text, setText, loading, saving, onParse, categori
       <div className="px-5 pb-5">
         {tab === 'ai' ? (
           <AiForm text={text} setText={setText} loading={loading} onParse={onParse}
-            textareaCls="w-full rounded-2xl border-2 border-orange-100 dark:border-orange-900/30 bg-orange-50/50 dark:bg-orange-900/10 text-xl leading-8 tracking-wide resize-y text-gray-900 dark:text-white font-medium px-5 py-4 focus:outline-none focus:border-orange-400 dark:focus:border-orange-500 focus:ring-4 focus:ring-orange-400/20 focus:bg-white dark:focus:bg-slate-800 placeholder:text-orange-200 dark:placeholder:text-slate-600 placeholder:text-sm placeholder:leading-relaxed placeholder:tracking-normal placeholder:font-mono placeholder:font-normal transition-all duration-300"
+            textareaCls="w-full rounded-2xl border-2 border-orange-100 dark:border-orange-900/30 bg-orange-50/50 dark:bg-orange-900/10 text-xl leading-8 tracking-wide resize-y overflow-y-auto text-gray-900 dark:text-white font-medium px-5 py-4 focus:outline-none focus:border-orange-400 dark:focus:border-orange-500 focus:ring-4 focus:ring-orange-400/20 focus:bg-white dark:focus:bg-slate-800 placeholder:text-orange-200 dark:placeholder:text-slate-600 placeholder:text-sm placeholder:leading-relaxed placeholder:tracking-normal placeholder:font-mono placeholder:font-normal transition-all duration-300"
             btnCls="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold bg-gradient-to-r from-amber-400 to-rose-500 text-white shadow-md hover:from-amber-500 hover:to-rose-600 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             hintCls="text-[11px] text-gray-400 dark:text-slate-500 leading-relaxed"
             codeCls="bg-gray-100 dark:bg-slate-700 px-1 py-0.5 rounded text-[10px]"
@@ -385,7 +392,7 @@ function Style4({ tab, setTab, text, setText, loading, saving, onParse, categori
             <div className="relative">
               <span className="absolute top-3.5 left-4 text-emerald-500 font-mono text-sm select-none pointer-events-none">›</span>
               <textarea
-                className="w-full rounded-lg border border-gray-800 bg-gray-900 text-gray-100 font-mono text-sm leading-7 resize-y pl-8 pr-4 py-3 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 placeholder:text-gray-700 placeholder:font-mono placeholder:text-xs transition-all duration-200 caret-emerald-400"
+                className="w-full rounded-lg border border-gray-800 bg-gray-900 text-gray-100 font-mono text-sm leading-7 resize-y overflow-y-auto pl-8 pr-4 py-3 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 placeholder:text-gray-700 placeholder:font-mono placeholder:text-xs transition-all duration-200 caret-emerald-400"
                 rows={3} placeholder={PLACEHOLDER} value={text} onChange={e => setText(e.target.value)}
               />
             </div>
