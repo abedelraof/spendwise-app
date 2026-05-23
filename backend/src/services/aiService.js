@@ -28,7 +28,18 @@ Examples using the user's categories:
 - "Personal Coffee 50" → if "Personal" is a user category, category="Personal", subcategory="Coffee"; if NOT a user category, fall back to category="Food", subcategory="Coffee"
 
 The user's valid category names are: ${JSON.stringify(userCategoryNames)}
-The category field in your output MUST be one of these exact strings (case-sensitive as listed).
+
+**Category assignment priority:**
+1. If the expense clearly matches one of the user's category names above → use it exactly (case-sensitive).
+2. If no user category fits well → suggest a concise, descriptive NEW category name that accurately reflects the expense type. Good examples:
+   - stocks, shares, ETF, trading → "Investments"
+   - Netflix, Spotify, SaaS, app subscription → "Subscriptions"
+   - salary, freelance payment received → "Income"
+   - gym, fitness, yoga → "Fitness"
+   - flights, travel, hotel → "Travel"
+   - charity, donation → "Charity"
+   - car service, repair, maintenance → "Maintenance"
+3. Only fall back to the user's "Other" / "Others" category as an absolute last resort when nothing more descriptive applies.
 
 ## Input Formats You Must Handle
 
@@ -76,7 +87,7 @@ Map informal names to the closest user category. Use your best judgment:
 1. date → always ISO YYYY-MM-DD
 2. amount → single numeric value only (never an expression)
 3. For each "+" in an amount expression, produce a separate JSON object with that number as amount
-4. category → MUST be one of the user's category names listed above
+4. category → use a user category if it clearly fits; otherwise suggest a descriptive new name (never leave blank)
 5. description → ≤60 char human-readable label
 6. raw_text → the specific line or portion that produced this expense
 7. tags → optional comma-separated tags or empty string
