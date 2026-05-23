@@ -2,11 +2,7 @@ import { useState } from 'react';
 import { Sparkles, Loader2, PenLine, Plus, Check, X, Zap } from 'lucide-react';
 import TagInput from '../common/TagInput';
 
-const PLACEHOLDER = `Paste expenses in any format:
-
-Plain text:  "spent 150 on groceries yesterday and 50 on coffee"
-WhatsApp:    [5/7/2026 6:19 AM] Name: Transportation 200+32+80
-Multi-day:   Date: 1-May-2026 ... (overrides message date)`;
+const PLACEHOLDER = `What did you spend today? Just describe it naturally — I'll handle the rest.`;
 
 const CATEGORIES = ['Food','Transport','Housing','Entertainment','Health','Shopping','Education','Utilities','Other'];
 
