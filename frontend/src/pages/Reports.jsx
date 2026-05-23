@@ -13,6 +13,7 @@ import Spinner from '../components/common/Spinner';
 import EmptyState from '../components/common/EmptyState';
 import StatsBar from '../components/dashboard/StatsBar';
 import LatestTransactions from '../components/dashboard/LatestTransactions';
+import MonthlyInsight from '../components/dashboard/MonthlyInsight';
 
 function monthStart() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`; }
 function today() { return new Date().toISOString().split('T')[0]; }
@@ -310,6 +311,9 @@ export default function Reports() {
           </ChartCard>
         </div>
       )}
+
+      {/* Monthly AI Insight */}
+      <MonthlyInsight />
 
       {/* Latest Transactions */}
       <LatestTransactions expenses={expenses} onDelete={handleDeleteExpense} />
