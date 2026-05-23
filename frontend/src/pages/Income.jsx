@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Trash2, Pencil, Filter, TrendingUp, Plus } from 'lucide-react';
+import { Trash2, Pencil, TrendingUp, Plus, X } from 'lucide-react';
 import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import Modal from '../components/common/Modal';
@@ -10,6 +10,23 @@ import { getIncomes, createIncomes, updateIncome, deleteIncome } from '../api/in
 
 const PAGE_SIZE = 20;
 const SOURCES   = ['Salary', 'Business', 'Freelance', 'Investment', 'Rental', 'Gift', 'Other'];
+
+const PRESETS = [
+  { id: 'month', label: 'This Month' },
+  { id: 'last',  label: 'Last Month' },
+  { id: '3m',    label: '3 Months'   },
+  { id: 'year',  label: 'This Year'  },
+  { id: 'custom',label: 'Custom'     },
+];
+function presetDates(id) {
+  const d = new Date(), y = d.getFullYear(), m = d.getMonth();
+  const iso = x => x.toISOString().split('T')[0];
+  if (id === 'month') return { s: iso(new Date(y, m, 1)),   e: iso(new Date(y, m+1, 0)) };
+  if (id === 'last')  return { s: iso(new Date(y, m-1, 1)), e: iso(new Date(y, m, 0))   };
+  if (id === '3m')    return { s: iso(new Date(y, m-2, 1)), e: iso(new Date(y, m+1, 0)) };
+  if (id === 'year')  return { s: iso(new Date(y, 0, 1)),   e: iso(new Date(y, 11, 31)) };
+  return null;
+}
 const CURRENCIES = ['EGP', 'USD', 'EUR', 'GBP', 'ILS', 'SAR', 'AED', 'CAD', 'JPY', 'CHF', 'CNY'];
 
 const SOURCE_COLORS = {
@@ -112,6 +129,7 @@ export default function Income() {
   const api = useApi();
   const { user } = useAuth();
 
+  const [datePreset, setDatePreset] = useState('month');
   const [filters, setFilters] = useState({
     startDate: monthStart(), endDate: todayStr(),
     source: '', search: '',
@@ -142,9 +160,17 @@ export default function Income() {
 
   const applyFilter = (k, v) => { setFilters(f => ({ ...f, [k]: v })); setPage(0); };
   const clearFilters = () => {
-    setFilters({ startDate: monthStart(), endDate: todayStr(), source: '', search: '' });
+    const p = presetDates('month');
+    setDatePreset('month');
+    setFilters({ startDate: p.s, endDate: p.e, source: '', search: '' });
     setPage(0);
   };
+  function applyPreset(id) {
+    setDatePreset(id);
+    const p = presetDates(id);
+    if (p) setFilters(f => ({ ...f, startDate: p.s, endDate: p.e }));
+    setPage(0);
+  }
 
   async function handleCreate(data) {
     try {
@@ -195,31 +221,57 @@ export default function Income() {
       </div>
 
       {/* Filters */}
-      <div className="card px-3 py-2.5 flex flex-wrap items-end gap-2">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">From</span>
-          <input type="date" className="input !py-1.5 !text-xs w-32" value={filters.startDate} onChange={e => applyFilter('startDate', e.target.value)} />
-        </div>
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">To</span>
-          <input type="date" className="input !py-1.5 !text-xs w-32" value={filters.endDate} onChange={e => applyFilter('endDate', e.target.value)} />
-        </div>
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">Source</span>
-          <select className="input !py-1.5 !text-xs w-36" value={filters.source} onChange={e => applyFilter('source', e.target.value)}>
-            <option value="">All sources</option>
-            {SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-        <div className="flex flex-col gap-0.5 flex-1 min-w-32">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">Search</span>
-          <input className="input !py-1.5 !text-xs" placeholder="description, notes…" value={filters.search} onChange={e => applyFilter('search', e.target.value)} />
-        </div>
-        <div className="flex items-center gap-2 ml-auto">
-          <button onClick={clearFilters} className="btn-secondary !py-1.5 !px-2.5 !text-xs">Clear</button>
-          <span className="text-xs text-gray-400 dark:text-slate-500">{total} records</span>
-        </div>
-      </div>
+      {(() => {
+        const chips = [
+          filters.search && { key: 'search', label: `"${filters.search}"`, clear: () => applyFilter('search', '') },
+          filters.source && { key: 'source', label: filters.source,         clear: () => applyFilter('source', '') },
+        ].filter(Boolean);
+        return (
+          <div className="card px-3 py-2.5 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex gap-0.5 p-0.5 bg-gray-100 dark:bg-slate-700/60 rounded-lg shrink-0">
+                {PRESETS.map(p => (
+                  <button key={p.id} onClick={() => applyPreset(p.id)}
+                    className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
+                      datePreset === p.id
+                        ? 'bg-white dark:bg-slate-800 text-gray-900 dark:text-white shadow-sm'
+                        : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300'
+                    }`}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <select className="input !py-1.5 !text-xs w-36" value={filters.source} onChange={e => applyFilter('source', e.target.value)}>
+                <option value="">All sources</option>
+                {SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <input className="input !py-1.5 !text-xs flex-1 min-w-[130px]" placeholder="Search descriptions…" value={filters.search} onChange={e => applyFilter('search', e.target.value)} />
+              <span className="text-xs text-gray-400 dark:text-slate-500 shrink-0">{total} records</span>
+            </div>
+
+            {datePreset === 'custom' && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-gray-400 dark:text-slate-500">From</span>
+                <input type="date" className="input !py-1.5 !text-xs w-36" value={filters.startDate} onChange={e => applyFilter('startDate', e.target.value)} />
+                <span className="text-xs text-gray-400 dark:text-slate-500">to</span>
+                <input type="date" className="input !py-1.5 !text-xs w-36" value={filters.endDate} onChange={e => applyFilter('endDate', e.target.value)} />
+              </div>
+            )}
+
+            {chips.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {chips.map(chip => (
+                  <span key={chip.key} className="inline-flex items-center gap-1 bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300 border border-brand-200 dark:border-brand-800/40 text-xs px-2.5 py-0.5 rounded-full font-medium">
+                    {chip.label}
+                    <button onClick={chip.clear} className="text-brand-400 hover:text-brand-600 dark:hover:text-brand-200 leading-none ml-0.5"><X size={10} /></button>
+                  </span>
+                ))}
+                <button onClick={clearFilters} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 transition-colors">Clear all</button>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Table */}
       <div className="card overflow-hidden">

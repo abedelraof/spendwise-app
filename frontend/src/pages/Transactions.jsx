@@ -16,7 +16,24 @@ const PAGE_SIZE = 20;
 function today() { return new Date().toISOString().split('T')[0]; }
 function monthStart() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`; }
 
-function CategoryPicker({ categories, categoryIds, subcategoryIds, onChange }) {
+const PRESETS = [
+  { id: 'month', label: 'This Month' },
+  { id: 'last',  label: 'Last Month' },
+  { id: '3m',    label: '3 Months'   },
+  { id: 'year',  label: 'This Year'  },
+  { id: 'custom',label: 'Custom'     },
+];
+function presetDates(id) {
+  const d = new Date(), y = d.getFullYear(), m = d.getMonth();
+  const iso = x => x.toISOString().split('T')[0];
+  if (id === 'month') return { s: iso(new Date(y, m, 1)),   e: iso(new Date(y, m+1, 0)) };
+  if (id === 'last')  return { s: iso(new Date(y, m-1, 1)), e: iso(new Date(y, m, 0))   };
+  if (id === '3m')    return { s: iso(new Date(y, m-2, 1)), e: iso(new Date(y, m+1, 0)) };
+  if (id === 'year')  return { s: iso(new Date(y, 0, 1)),   e: iso(new Date(y, 11, 31)) };
+  return null;
+}
+
+function CategoryPicker({ categories, categoryIds, subcategoryIds, onChange, showLabel = true }) {
   const [open, setOpen]     = useState(false);
   const [search, setSearch] = useState('');
   const ref = useRef(null);
@@ -58,7 +75,7 @@ function CategoryPicker({ categories, categoryIds, subcategoryIds, onChange }) {
 
   return (
     <div ref={ref} className="relative flex flex-col gap-0.5">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">Category</span>
+      {showLabel && <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">Category</span>}
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
@@ -123,6 +140,7 @@ export default function Transactions() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
 
+  const [datePreset, setDatePreset] = useState('month');
   const [filters, setFilters] = useState({
     startDate: monthStart(), endDate: today(),
     search: searchParams.get('search') || '',
@@ -159,7 +177,18 @@ export default function Transactions() {
   useEffect(() => { getCategories(api).then(d => setCategories(d.categories)).catch(() => {}); }, [api]);
 
   const applyFilter = (k, v) => { setFilters(f => ({ ...f, [k]: v })); setPage(0); };
-  const clearFilters = () => { setFilters({ startDate: monthStart(), endDate: today(), search: '', categoryIds: [], subcategoryIds: [], minAmount: '', maxAmount: '', sortBy: 'date', sortDir: 'DESC' }); setPage(0); };
+  const clearFilters = () => {
+    const p = presetDates('month');
+    setDatePreset('month');
+    setFilters({ startDate: p.s, endDate: p.e, search: '', categoryIds: [], subcategoryIds: [], minAmount: '', maxAmount: '', sortBy: 'date', sortDir: 'DESC' });
+    setPage(0);
+  };
+  function applyPreset(id) {
+    setDatePreset(id);
+    const p = presetDates(id);
+    if (p) setFilters(f => ({ ...f, startDate: p.s, endDate: p.e }));
+    setPage(0);
+  }
 
   async function handleDelete(id) {
     if (!confirm('Delete this expense?')) return;
@@ -209,54 +238,86 @@ export default function Transactions() {
       </div>
 
       {/* Filters */}
-      <div className="card px-3 py-2.5 flex flex-wrap items-end gap-2">
-        {[
-          <div key="from" className="flex flex-col gap-0.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">From</span>
-            <input type="date" className="input !py-1.5 !text-xs w-32" value={filters.startDate} onChange={e => applyFilter('startDate', e.target.value)} />
-          </div>,
-          <div key="to" className="flex flex-col gap-0.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">To</span>
-            <input type="date" className="input !py-1.5 !text-xs w-32" value={filters.endDate} onChange={e => applyFilter('endDate', e.target.value)} />
-          </div>,
-          <div key="search" className="flex flex-col gap-0.5 flex-1 min-w-32">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">Search</span>
-            <input className="input !py-1.5 !text-xs" placeholder="description, notes…" value={filters.search} onChange={e => applyFilter('search', e.target.value)} />
-          </div>,
-          <CategoryPicker
-            key="cat"
-            categories={categories}
-            categoryIds={filters.categoryIds}
-            subcategoryIds={filters.subcategoryIds}
-            onChange={(catId, subId) => {
-              setFilters(f => ({ ...f, categoryIds: catId ? [catId] : [], subcategoryIds: subId ? [subId] : [] }));
-              setPage(0);
-            }}
-          />,
-          <div key="min" className="flex flex-col gap-0.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">Min</span>
-            <input type="number" className="input !py-1.5 !text-xs w-24" placeholder="0" value={filters.minAmount} onChange={e => applyFilter('minAmount', e.target.value)} />
-          </div>,
-          <div key="max" className="flex flex-col gap-0.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">Max</span>
-            <input type="number" className="input !py-1.5 !text-xs w-24" placeholder="∞" value={filters.maxAmount} onChange={e => applyFilter('maxAmount', e.target.value)} />
-          </div>,
-          <div key="sort" className="flex flex-col gap-0.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">Sort</span>
-            <select className="input !py-1.5 !text-xs w-36" value={`${filters.sortBy}_${filters.sortDir}`} onChange={e => { const [by, dir] = e.target.value.split('_'); applyFilter('sortBy', by); applyFilter('sortDir', dir); }}>
-              <option value="date_DESC">Newest first</option>
-              <option value="date_ASC">Oldest first</option>
-              <option value="amount_DESC">Amount ↓</option>
-              <option value="amount_ASC">Amount ↑</option>
-            </select>
-          </div>,
-        ]}
-        <div className="flex items-center gap-2 ml-auto">
-          <button onClick={clearFilters} className="btn-secondary !py-1.5 !px-2.5 !text-xs">Clear</button>
-          <button onClick={handleExport} className="btn-secondary !py-1.5 !px-2.5 !text-xs"><Download size={11} /> CSV</button>
-          <span className="text-xs text-gray-400 dark:text-slate-500">{total} rows</span>
-        </div>
-      </div>
+      {(() => {
+        const catLabel = (() => {
+          if (filters.subcategoryIds[0]) {
+            for (const c of categories) {
+              const s = (c.subcategories || []).find(s => s.id === filters.subcategoryIds[0]);
+              if (s) return `${c.icon ?? ''} ${c.name} › ${s.name}`;
+            }
+          }
+          if (filters.categoryIds[0]) {
+            const c = categories.find(c => c.id === filters.categoryIds[0]);
+            return c ? `${c.icon ?? ''} ${c.name}` : null;
+          }
+          return null;
+        })();
+        const sortLabel = { date_DESC: 'Newest first', date_ASC: 'Oldest first', amount_DESC: 'Amount ↓', amount_ASC: 'Amount ↑' }[`${filters.sortBy}_${filters.sortDir}`];
+        const isDefaultSort = filters.sortBy === 'date' && filters.sortDir === 'DESC';
+        const chips = [
+          filters.search     && { key: 'search', label: `"${filters.search}"`,         clear: () => applyFilter('search', '') },
+          catLabel           && { key: 'cat',    label: catLabel,                        clear: () => { setFilters(f => ({...f, categoryIds: [], subcategoryIds: []})); setPage(0); } },
+          filters.minAmount  && { key: 'min',    label: `Min ${filters.minAmount}`,      clear: () => applyFilter('minAmount', '') },
+          filters.maxAmount  && { key: 'max',    label: `Max ${filters.maxAmount}`,      clear: () => applyFilter('maxAmount', '') },
+          !isDefaultSort     && { key: 'sort',   label: sortLabel,                       clear: () => { applyFilter('sortBy','date'); applyFilter('sortDir','DESC'); } },
+        ].filter(Boolean);
+
+        return (
+          <div className="card px-3 py-2.5 space-y-2">
+            {/* Row: presets + search + category + sort + actions */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex gap-0.5 p-0.5 bg-gray-100 dark:bg-slate-700/60 rounded-lg shrink-0">
+                {PRESETS.map(p => (
+                  <button key={p.id} onClick={() => applyPreset(p.id)}
+                    className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
+                      datePreset === p.id
+                        ? 'bg-white dark:bg-slate-800 text-gray-900 dark:text-white shadow-sm'
+                        : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300'
+                    }`}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <input className="input !py-1.5 !text-xs flex-1 min-w-[130px]" placeholder="Search descriptions, notes…" value={filters.search} onChange={e => applyFilter('search', e.target.value)} />
+              <CategoryPicker showLabel={false} categories={categories} categoryIds={filters.categoryIds} subcategoryIds={filters.subcategoryIds}
+                onChange={(catId, subId) => { setFilters(f => ({...f, categoryIds: catId ? [catId] : [], subcategoryIds: subId ? [subId] : []})); setPage(0); }} />
+              <select className="input !py-1.5 !text-xs w-36" value={`${filters.sortBy}_${filters.sortDir}`} onChange={e => { const [by, dir] = e.target.value.split('_'); applyFilter('sortBy', by); applyFilter('sortDir', dir); }}>
+                <option value="date_DESC">Newest first</option>
+                <option value="date_ASC">Oldest first</option>
+                <option value="amount_DESC">Amount ↓</option>
+                <option value="amount_ASC">Amount ↑</option>
+              </select>
+              <button onClick={handleExport} className="btn-secondary !py-1.5 !px-2.5 !text-xs"><Download size={11} /> CSV</button>
+              <span className="text-xs text-gray-400 dark:text-slate-500 shrink-0">{total} rows</span>
+            </div>
+
+            {/* Custom date range */}
+            {datePreset === 'custom' && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-gray-400 dark:text-slate-500">From</span>
+                <input type="date" className="input !py-1.5 !text-xs w-36" value={filters.startDate} onChange={e => applyFilter('startDate', e.target.value)} />
+                <span className="text-xs text-gray-400 dark:text-slate-500">to</span>
+                <input type="date" className="input !py-1.5 !text-xs w-36" value={filters.endDate} onChange={e => applyFilter('endDate', e.target.value)} />
+                <input type="number" className="input !py-1.5 !text-xs w-24" placeholder="Min amount" value={filters.minAmount} onChange={e => applyFilter('minAmount', e.target.value)} />
+                <input type="number" className="input !py-1.5 !text-xs w-24" placeholder="Max amount" value={filters.maxAmount} onChange={e => applyFilter('maxAmount', e.target.value)} />
+              </div>
+            )}
+
+            {/* Active filter chips */}
+            {chips.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {chips.map(chip => (
+                  <span key={chip.key} className="inline-flex items-center gap-1 bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300 border border-brand-200 dark:border-brand-800/40 text-xs px-2.5 py-0.5 rounded-full font-medium">
+                    {chip.label}
+                    <button onClick={chip.clear} className="text-brand-400 hover:text-brand-600 dark:hover:text-brand-200 leading-none ml-0.5"><X size={10} /></button>
+                  </span>
+                ))}
+                <button onClick={clearFilters} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 transition-colors">Clear all</button>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Bulk bar */}
       {selected.size > 0 && (

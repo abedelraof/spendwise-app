@@ -18,6 +18,23 @@ import MonthlyInsight from '../components/dashboard/MonthlyInsight';
 function monthStart() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`; }
 function today() { return new Date().toISOString().split('T')[0]; }
 
+const PRESETS = [
+  { id: 'month', label: 'This Month' },
+  { id: 'last',  label: 'Last Month' },
+  { id: '3m',    label: '3 Months'   },
+  { id: 'year',  label: 'This Year'  },
+  { id: 'custom',label: 'Custom'     },
+];
+function presetDates(id) {
+  const d = new Date(), y = d.getFullYear(), m = d.getMonth();
+  const iso = x => x.toISOString().split('T')[0];
+  if (id === 'month') return { s: iso(new Date(y, m, 1)),   e: iso(new Date(y, m+1, 0)) };
+  if (id === 'last')  return { s: iso(new Date(y, m-1, 1)), e: iso(new Date(y, m, 0))   };
+  if (id === '3m')    return { s: iso(new Date(y, m-2, 1)), e: iso(new Date(y, m+1, 0)) };
+  if (id === 'year')  return { s: iso(new Date(y, 0, 1)),   e: iso(new Date(y, 11, 31)) };
+  return null;
+}
+
 const COLORS = ['#7c3aed','#f97316','#3b82f6','#10b981','#f59e0b','#ec4899','#6366f1','#14b8a6','#6b7280'];
 
 function fmt(n) { return Number(n || 0).toLocaleString('en', { maximumFractionDigits: 0 }); }
@@ -71,6 +88,7 @@ const tooltipStyle = {
 export default function Reports() {
   const api = useApi();
   const { user } = useAuth();
+  const [datePreset, setDatePreset] = useState('month');
   const [startDate, setStartDate] = useState(monthStart());
   const [endDate, setEndDate]     = useState(today());
   const [data, setData]           = useState({ trend: [], breakdown: [], topDays: [] });
@@ -133,25 +151,43 @@ export default function Reports() {
       <StatsBar stats={dashStats} currency={currency} />
 
       {/* Filter bar */}
-      <div className="card px-3 py-2.5 flex flex-wrap items-end gap-2">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">From</span>
-          <input type="date" className="input !py-1.5 !text-xs w-32" value={startDate} onChange={e => setStartDate(e.target.value)} />
+      <div className="card px-3 py-2.5 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-0.5 p-0.5 bg-gray-100 dark:bg-slate-700/60 rounded-lg shrink-0">
+            {PRESETS.map(p => (
+              <button key={p.id} onClick={() => {
+                setDatePreset(p.id);
+                const r = presetDates(p.id);
+                if (r) { setStartDate(r.s); setEndDate(r.e); }
+              }}
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
+                  datePreset === p.id
+                    ? 'bg-white dark:bg-slate-800 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300'
+                }`}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <div className="ml-auto flex items-center gap-3">
+            {!loading && totalSpent > 0 && (
+              <span className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
+                {fmt(totalSpent)} <span className="text-xs font-normal text-gray-400">{currency}</span>
+              </span>
+            )}
+            <button onClick={handleExport} className="btn-secondary !py-1.5 !px-2.5 !text-xs">
+              <Download size={11} /> CSV
+            </button>
+          </div>
         </div>
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">To</span>
-          <input type="date" className="input !py-1.5 !text-xs w-32" value={endDate} onChange={e => setEndDate(e.target.value)} />
-        </div>
-        <div className="ml-auto flex items-end gap-3">
-          {!loading && totalSpent > 0 && (
-            <span className="text-sm font-semibold text-gray-900 dark:text-white tabular-nums">
-              {fmt(totalSpent)} <span className="text-xs font-normal text-gray-400">{currency}</span>
-            </span>
-          )}
-          <button onClick={handleExport} className="btn-secondary !py-1.5 !px-2.5 !text-xs">
-            <Download size={11} /> CSV
-          </button>
-        </div>
+        {datePreset === 'custom' && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-gray-400 dark:text-slate-500">From</span>
+            <input type="date" className="input !py-1.5 !text-xs w-36" value={startDate} onChange={e => setStartDate(e.target.value)} />
+            <span className="text-xs text-gray-400 dark:text-slate-500">to</span>
+            <input type="date" className="input !py-1.5 !text-xs w-36" value={endDate} onChange={e => setEndDate(e.target.value)} />
+          </div>
+        )}
       </div>
 
       {loading ? (
