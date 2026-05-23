@@ -92,8 +92,8 @@ function ManualForm({ categories = [], currency = 'EGP', onAdd, saving, onCreate
     ? 'flex items-center gap-0.5 text-[11px] font-mono font-medium text-emerald-500 hover:text-emerald-400 transition-colors'
     : 'flex items-center gap-0.5 text-[11px] font-medium text-brand-500 hover:text-brand-600 transition-colors';
   const submitCls = isDark4
-    ? 'flex items-center justify-center gap-1.5 w-full px-4 py-2.5 rounded-lg text-xs font-mono font-bold bg-emerald-500 text-gray-950 hover:bg-emerald-400 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed'
-    : 'flex items-center justify-center gap-1.5 w-full px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-brand-500 to-violet-500 text-white shadow-md hover:from-brand-600 hover:to-violet-600 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100';
+    ? 'flex items-center justify-center gap-1.5 w-full h-[38px] px-4 rounded-lg text-xs font-mono font-bold bg-emerald-500 text-gray-950 hover:bg-emerald-400 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed'
+    : 'flex items-center justify-center gap-1.5 w-full h-[38px] px-4 rounded-xl text-xs font-bold bg-gradient-to-r from-brand-500 to-violet-500 text-white shadow-md hover:from-brand-600 hover:to-violet-600 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100';
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
@@ -152,15 +152,9 @@ function ManualForm({ categories = [], currency = 'EGP', onAdd, saving, onCreate
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className={labelCls}>Description</label>
-          <input type="text" className={inputCls} placeholder="Short label" maxLength={60} value={form.description} onChange={e => set('description', e.target.value)} />
-        </div>
-        <div>
-          <label className={labelCls}>Notes</label>
-          <input type="text" className={inputCls} placeholder="Optional" value={form.notes} onChange={e => set('notes', e.target.value)} />
-        </div>
+      <div>
+        <label className={labelCls}>Description</label>
+        <input type="text" className={inputCls} placeholder="Short label" maxLength={60} value={form.description} onChange={e => set('description', e.target.value)} />
       </div>
 
       <div className="grid grid-cols-2 gap-3 items-end">
