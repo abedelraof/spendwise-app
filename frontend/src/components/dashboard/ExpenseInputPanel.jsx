@@ -152,12 +152,11 @@ function ManualForm({ categories = [], currency = 'EGP', onAdd, saving, onCreate
         </div>
       </div>
 
-      <div>
-        <label className={labelCls}>Description</label>
-        <input type="text" className={inputCls} placeholder="Short label" maxLength={60} value={form.description} onChange={e => set('description', e.target.value)} />
-      </div>
-
       <div className="grid grid-cols-2 gap-3 items-end">
+        <div>
+          <label className={labelCls}>Description</label>
+          <input type="text" className={inputCls} placeholder="Short label" maxLength={60} value={form.description} onChange={e => set('description', e.target.value)} />
+        </div>
         <div>
           <label className={labelCls}>Tags</label>
           <TagInput value={form.tags} onChange={v => set('tags', v)}
@@ -169,10 +168,10 @@ function ManualForm({ categories = [], currency = 'EGP', onAdd, saving, onCreate
               : undefined}
           />
         </div>
-        <button type="submit" disabled={saving || !form.amount} className={submitCls}>
-          {saving ? <><Loader2 size={13} className="animate-spin" /> Saving…</> : <><PenLine size={13} /> Add Expense</>}
-        </button>
       </div>
+      <button type="submit" disabled={saving || !form.amount} className={submitCls}>
+        {saving ? <><Loader2 size={13} className="animate-spin" /> Saving…</> : <><PenLine size={13} /> Add Expense</>}
+      </button>
     </form>
   );
 }
