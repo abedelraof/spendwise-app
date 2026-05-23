@@ -733,7 +733,8 @@ export default function Accounts() {
   const [ratesError,        setRatesError]        = useState(false);
   const [ratesLoaded,       setRatesLoaded]       = useState(false);
   const [accountsSettings,  setAccountsSettings]  = useState(null);
-  const [editBalanceTarget, setEditBalanceTarget] = useState(null); // { snapshot, account }  const [groups,            setGroups]            = useState([]);
+  const [editBalanceTarget, setEditBalanceTarget] = useState(null); // { snapshot, account }
+  const [groups,            setGroups]            = useState([]);
   const [collapsedGroups,   setCollapsedGroups]   = useState({});
   const [showAddGroup,      setShowAddGroup]      = useState(false);
   const [editGroupTarget,   setEditGroupTarget]   = useState(null);
@@ -776,7 +777,8 @@ export default function Accounts() {
     setRatesLoaded(true);
     setLoading(false);
 
-    // Goals + Groups (non-blocking)    getAccountGroups(api).then(d => setGroups(d.groups)).catch(() => {});
+    // Groups (non-blocking)
+    getAccountGroups(api).then(d => setGroups(d.groups)).catch(() => {});
   }, [api, user]);
 
   useEffect(() => { fetchAccounts(); }, [fetchAccounts]);
