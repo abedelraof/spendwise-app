@@ -3,18 +3,12 @@ import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import { showToast } from '../components/common/Toast';
 import Spinner from '../components/common/Spinner';
-import StatsBar from '../components/dashboard/StatsBar';
-import BudgetAlerts from '../components/dashboard/BudgetAlerts';
-import MonthlyInsight from '../components/dashboard/MonthlyInsight';
 import ExpenseInputPanel from '../components/dashboard/ExpenseInputPanel';
 import ParsedExpenseConfirm from '../components/dashboard/ParsedExpenseConfirm';
-import LatestTransactions from '../components/dashboard/LatestTransactions';
 import { getDashboardStats } from '../api/reportsApi';
-import { getExpenses, createExpenses, deleteExpense } from '../api/expensesApi';
+import { createExpenses } from '../api/expensesApi';
 import { parseExpenses } from '../api/aiApi';
-import { getBudgets } from '../api/budgetsApi';
 import { getCategories, createCategory, createSubcategory } from '../api/categoriesApi';
-import { getAccounts, getRates } from '../api/accountsApi';
 import { getSettings } from '../api/settingsApi';
 
 function greeting() {
@@ -24,60 +18,52 @@ function greeting() {
   return 'Good evening';
 }
 
+function SummaryStrip({ stats, currency }) {
+  if (!stats) return null;
+  const fmt = n => Number(n ?? 0).toLocaleString('en', { maximumFractionDigits: 0 });
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-3 rounded-xl
+      bg-brand-50 dark:bg-brand-900/20 border border-brand-100 dark:border-brand-800/30 text-sm">
+      <span className="font-bold text-brand-700 dark:text-brand-300">
+        {fmt(stats.totalThisMonth)} {currency}
+      </span>
+      <span className="text-gray-300 dark:text-slate-600 hidden sm:inline">·</span>
+      <span className="text-gray-500 dark:text-slate-400">
+        Top: <span className="font-medium text-gray-800 dark:text-slate-200">{stats.topCategory || '—'}</span>
+      </span>
+      <span className="text-gray-300 dark:text-slate-600 hidden sm:inline">·</span>
+      <span className="text-gray-500 dark:text-slate-400">
+        Avg: <span className="font-medium text-gray-800 dark:text-slate-200">{fmt(stats.dailyAverage)} {currency}/day</span>
+      </span>
+      <span className="text-gray-300 dark:text-slate-600 hidden sm:inline">·</span>
+      <span className="text-gray-500 dark:text-slate-400">
+        <span className="font-medium text-gray-800 dark:text-slate-200">{stats.transactionCount}</span> transactions
+      </span>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const api = useApi();
   const { user } = useAuth();
-  const [stats, setStats]     = useState(null);
-  const [expenses, setExpenses] = useState([]);
-  const [budgets, setBudgets]   = useState([]);
+  const [stats,      setStats]      = useState(null);
   const [categories, setCategories] = useState([]);
-  const [loading, setLoading]   = useState(true);
-  const [netWorthData, setNetWorthData] = useState(null);
-  const [parsing, setParsing]   = useState(false);
-  const [parsed, setParsed]     = useState(null);
-  const [saving, setSaving]     = useState(false);
+  const [currency,   setCurrency]   = useState(user?.currency || 'EGP');
+  const [loading,    setLoading]    = useState(true);
+  const [parsing,    setParsing]    = useState(false);
+  const [parsed,     setParsed]     = useState(null);
+  const [saving,     setSaving]     = useState(false);
 
   const fetchAll = useCallback(async () => {
     try {
-      const [s, e, b, c, settings, accountsData] = await Promise.all([
+      const [statsRes, catsRes, settingsRes] = await Promise.allSettled([
         getDashboardStats(api),
-        getExpenses(api, { limit: 10, sortBy: 'created_at', sortDir: 'DESC' }),
-        getBudgets(api),
         getCategories(api),
-        getSettings(api).catch(() => null),
-        getAccounts(api).catch(() => null),
+        getSettings(api),
       ]);
-      setStats(s);
-      setExpenses(e.expenses);
-      setBudgets(b.budgets);
-      setCategories(c.categories);
-
-      const homeCurrency = settings?.currency || user?.currency || 'EGP';
-      if (accountsData?.accounts) {
-        try {
-          const ratesData = await getRates(api, homeCurrency);
-          const rates = ratesData?.rates;
-          const accounts = accountsData.accounts;
-
-          function convertedSum(list) {
-            if (!rates) return null;
-            return list.reduce((sum, a) => {
-              if (a.latest_balance == null) return sum;
-              if (a.currency === homeCurrency) return sum + a.latest_balance;
-              const rate = rates[a.currency];
-              return rate ? sum + a.latest_balance / rate : sum;
-            }, 0);
-          }
-
-          const assetAccounts     = accounts.filter(a => a.type !== 'liability');
-          const liabilityAccounts = accounts.filter(a => a.type === 'liability');
-          const totalAssets      = convertedSum(assetAccounts.filter(a => a.latest_balance != null));
-          const totalLiabilities = convertedSum(liabilityAccounts.filter(a => a.latest_balance != null));
-          const netWorth = totalAssets != null && totalLiabilities != null
-            ? totalAssets - totalLiabilities : totalAssets;
-          setNetWorthData({ totalAssets, totalLiabilities, netWorth, currency: homeCurrency });
-        } catch { /* rates optional */ }
-      }
+      if (statsRes.status    === 'fulfilled') setStats(statsRes.value);
+      if (catsRes.status     === 'fulfilled') setCategories(catsRes.value.categories);
+      if (settingsRes.status === 'fulfilled') setCurrency(settingsRes.value.currency || user?.currency || 'EGP');
     } catch { showToast('Failed to load dashboard', 'error'); }
     finally { setLoading(false); }
   }, [api, user]);
@@ -107,12 +93,7 @@ export default function Dashboard() {
     }
     showToast(`${confirmed.length} expense${confirmed.length !== 1 ? 's' : ''} saved!`);
     fetchAll();
-    // Return fresh budget data for affected categories so the confirm modal can show impact
-    try {
-      const { budgets: fresh } = await getBudgets(api);
-      const affectedCats = new Set(confirmed.map(e => (e.category || '').toLowerCase()));
-      return fresh.filter(b => affectedCats.has((b.category_name || '').toLowerCase()));
-    } catch { return []; }
+    return [];
   }
 
   async function handleManualAdd(expense) {
@@ -138,14 +119,6 @@ export default function Dashboard() {
     setCategories(fresh.categories);
   }
 
-  async function handleDelete(id) {
-    try {
-      await deleteExpense(api, id);
-      setExpenses(prev => prev.filter(e => e.id !== id));
-      fetchAll();
-    } catch { showToast('Failed to delete', 'error'); }
-  }
-
   if (loading) return (
     <div className="flex items-center justify-center h-64"><Spinner size="lg" /></div>
   );
@@ -153,7 +126,7 @@ export default function Dashboard() {
   const name = user?.email?.split('@')[0];
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-4 animate-fade-in">
       {/* Greeting */}
       <div>
         <h2 className="text-xl font-bold text-gray-900 dark:text-white">
@@ -161,20 +134,20 @@ export default function Dashboard() {
         </h2>
       </div>
 
+      {/* Summary strip */}
+      <SummaryStrip stats={stats} currency={currency} />
+
+      {/* Log Expense */}
       <ExpenseInputPanel
         onParse={handleParse}
         onAdd={handleManualAdd}
         loading={parsing}
         saving={saving}
         categories={categories}
-        currency={user?.currency}
+        currency={currency}
         onCreateCategory={handleCreateCategory}
         onCreateSubcategory={handleCreateSubcategory}
       />
-      <StatsBar stats={stats} currency={user?.currency} />
-      <BudgetAlerts budgets={budgets} />
-      <MonthlyInsight />
-      <LatestTransactions expenses={expenses} onDelete={handleDelete} />
 
       {parsed && (
         <ParsedExpenseConfirm

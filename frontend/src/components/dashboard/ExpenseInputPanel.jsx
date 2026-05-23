@@ -181,7 +181,7 @@ function AiForm({ text, setText, loading, onParse,
   textareaCls = '', btnCls = '', hintCls = '', codeCls = '' }) {
   return (
     <form onSubmit={e => { e.preventDefault(); if (text.trim()) { onParse(text); setText(''); } }} className="space-y-3">
-      <textarea className={textareaCls} rows={5} placeholder={PLACEHOLDER} value={text} onChange={e => setText(e.target.value)} />
+      <textarea className={textareaCls} rows={3} placeholder={PLACEHOLDER} value={text} onChange={e => setText(e.target.value)} />
       <div className="flex items-center justify-between gap-3">
         <p className={hintCls}>
           Plain text, WhatsApp, math like <code className={codeCls}>200+32+76</code>
@@ -200,7 +200,7 @@ function AiForm({ text, setText, loading, onParse,
 function Style1({ tab, setTab, text, setText, loading, saving, onParse, categories, currency, onAdd, onCreateCategory, onCreateSubcategory }) {
   return (
     <div className="card overflow-hidden">
-      <div className="relative overflow-hidden bg-gradient-to-r from-violet-600 via-brand-500 to-purple-600 px-5 pt-5 pb-14">
+      <div className="relative overflow-hidden bg-gradient-to-r from-violet-600 via-brand-500 to-purple-600 px-5 pt-5 pb-10">
         <div className="absolute -top-8 -right-8 w-36 h-36 bg-white/10 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-0 left-4 w-24 h-24 bg-fuchsia-400/20 rounded-full blur-2xl pointer-events-none" />
         <div className="absolute top-2 right-16 w-8 h-8 bg-white/15 rounded-full blur-md pointer-events-none" />
@@ -303,7 +303,7 @@ function Style2({ tab, setTab, text, setText, loading, saving, onParse, categori
 function Style3({ tab, setTab, text, setText, loading, saving, onParse, categories, currency, onAdd, onCreateCategory, onCreateSubcategory }) {
   return (
     <div className="card overflow-hidden">
-      <div className="relative overflow-hidden bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 px-5 pt-5 pb-14">
+      <div className="relative overflow-hidden bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 px-5 pt-5 pb-10">
         <div className="pointer-events-none absolute -top-6 -right-6 w-32 h-32 bg-white/15 rounded-full blur-3xl" />
         <div className="pointer-events-none absolute bottom-0 left-8 w-20 h-20 bg-yellow-300/20 rounded-full blur-2xl" />
         <div className="pointer-events-none absolute top-4 right-24 w-5 h-5 bg-white/30 rounded-full blur-sm" />
@@ -386,7 +386,7 @@ function Style4({ tab, setTab, text, setText, loading, saving, onParse, categori
               <span className="absolute top-3.5 left-4 text-emerald-500 font-mono text-sm select-none pointer-events-none">›</span>
               <textarea
                 className="w-full rounded-lg border border-gray-800 bg-gray-900 text-gray-100 font-mono text-sm leading-7 resize-y pl-8 pr-4 py-3 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 placeholder:text-gray-700 placeholder:font-mono placeholder:text-xs transition-all duration-200 caret-emerald-400"
-                rows={5} placeholder={PLACEHOLDER} value={text} onChange={e => setText(e.target.value)}
+                rows={3} placeholder={PLACEHOLDER} value={text} onChange={e => setText(e.target.value)}
               />
             </div>
             <div className="flex items-center justify-between gap-3">
