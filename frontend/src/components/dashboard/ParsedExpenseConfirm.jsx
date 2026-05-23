@@ -244,22 +244,16 @@ export default function ParsedExpenseConfirm({ expenses: initial, categories = [
             </p>
           )}
 
-          {/* Amount + Currency + Date */}
-          <div className="grid grid-cols-3 gap-2">
-            <div className="col-span-1">
+          {/* Amount + Date */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
               <label className="label">Amount</label>
-              <input type="number" className="input h-8 text-sm font-bold" step="0.01"
+              <input type="number" className="input h-10 font-bold" step="0.01"
                 value={e.amount} onChange={ev => update('amount', parseFloat(ev.target.value))} />
             </div>
             <div>
-              <label className="label">Currency</label>
-              <select className="input h-8 text-sm" value={e.currency} onChange={ev => update('currency', ev.target.value)}>
-                {CURRENCIES.map(c => <option key={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
               <label className="label">Date</label>
-              <input type="date" className="input h-8 text-sm" value={e.date}
+              <input type="date" className="input h-10" value={e.date}
                 onChange={ev => update('date', ev.target.value)} />
             </div>
           </div>
@@ -274,7 +268,7 @@ export default function ParsedExpenseConfirm({ expenses: initial, categories = [
                 )}
               </div>
               <select
-                className={`input h-8 text-sm ${isNewCategory ? 'border-amber-400 dark:border-amber-500' : ''}`}
+                className={`input h-10 ${isNewCategory ? 'border-amber-400 dark:border-amber-500' : ''}`}
                 value={e.category}
                 onChange={ev => { update('category', ev.target.value); update('subcategory', ''); }}
               >
@@ -290,7 +284,7 @@ export default function ParsedExpenseConfirm({ expenses: initial, categories = [
               </div>
               {effectiveSubcats.length ? (
                 <select
-                  className={`input h-8 text-sm ${isNewSubcategory ? 'border-amber-400 dark:border-amber-500' : ''}`}
+                  className={`input h-10 ${isNewSubcategory ? 'border-amber-400 dark:border-amber-500' : ''}`}
                   value={e.subcategory || ''}
                   onChange={ev => update('subcategory', ev.target.value)}
                 >
@@ -298,24 +292,17 @@ export default function ParsedExpenseConfirm({ expenses: initial, categories = [
                   {effectiveSubcats.map(s => <option key={s.id || s.name} value={s.name}>{s.name}</option>)}
                 </select>
               ) : (
-                <input type="text" className="input h-8 text-sm" value={e.subcategory || ''}
+                <input type="text" className="input h-10" value={e.subcategory || ''}
                   onChange={ev => update('subcategory', ev.target.value)} placeholder="Optional" />
               )}
             </div>
           </div>
 
-          {/* Description + Notes */}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="label">Description</label>
-              <input type="text" className="input h-8 text-sm" value={e.description || ''}
-                onChange={ev => update('description', ev.target.value)} maxLength={60} placeholder="Label" />
-            </div>
-            <div>
-              <label className="label">Notes</label>
-              <input type="text" className="input h-8 text-sm" value={e.notes || ''}
-                onChange={ev => update('notes', ev.target.value)} placeholder="Optional" />
-            </div>
+          {/* Description */}
+          <div>
+            <label className="label">Description</label>
+            <input type="text" className="input h-10" value={e.description || ''}
+              onChange={ev => update('description', ev.target.value)} maxLength={60} placeholder="Label" />
           </div>
 
           {/* Tags */}
