@@ -7,12 +7,10 @@ import { Download, BarChart2 } from 'lucide-react';
 import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import { getSpendingTrend, getCategoryBreakdown, getTopDays, exportCsv, getDashboardStats } from '../api/reportsApi';
-import { getExpenses, deleteExpense } from '../api/expensesApi';
 import { showToast } from '../components/common/Toast';
 import Spinner from '../components/common/Spinner';
 import EmptyState from '../components/common/EmptyState';
 import StatsBar from '../components/dashboard/StatsBar';
-import LatestTransactions from '../components/dashboard/LatestTransactions';
 import MonthlyInsight from '../components/dashboard/MonthlyInsight';
 
 function monthStart() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`; }
@@ -94,33 +92,23 @@ export default function Reports() {
   const [data, setData]           = useState({ trend: [], breakdown: [], topDays: [] });
   const [loading, setLoading]     = useState(true);
   const [dashStats, setDashStats] = useState(null);
-  const [expenses,  setExpenses]  = useState([]);
 
   const fetchReports = useCallback(async () => {
     setLoading(true);
     try {
-      const [trend, breakdown, topDays, statsRes, expensesRes] = await Promise.all([
+      const [trend, breakdown, topDays, statsRes] = await Promise.all([
         getSpendingTrend(api, startDate, endDate),
         getCategoryBreakdown(api, startDate, endDate),
         getTopDays(api, startDate, endDate, 10),
         getDashboardStats(api).catch(() => null),
-        getExpenses(api, { limit: 10, sortBy: 'created_at', sortDir: 'DESC' }).catch(() => null),
       ]);
       setData({ trend: trend.data, breakdown: breakdown.data, topDays: topDays.data });
-      if (statsRes)    setDashStats(statsRes);
-      if (expensesRes) setExpenses(expensesRes.expenses);
+      if (statsRes) setDashStats(statsRes);
     } catch { showToast('Failed to load reports', 'error'); }
     setLoading(false);
   }, [api, startDate, endDate]);
 
-  async function handleDeleteExpense(id) {
-    try {
-      await deleteExpense(api, id);
-      setExpenses(ex => ex.filter(e => e.id !== id));
-    } catch { showToast('Failed to delete', 'error'); }
-  }
-
-  useEffect(() => { fetchReports(); }, [fetchReports]);
+useEffect(() => { fetchReports(); }, [fetchReports]);
 
   async function handleExport() {
     try {
@@ -351,8 +339,6 @@ export default function Reports() {
         </div>
       )}
 
-      {/* Latest Transactions */}
-      <LatestTransactions expenses={expenses} onDelete={handleDeleteExpense} />
     </div>
   );
 }
