@@ -6,7 +6,11 @@ const SOURCES = ['Salary', 'Business', 'Freelance', 'Investment', 'Rental', 'Gif
 
 router.get('/', auth, async (req, res, next) => {
   try {
-    const { startDate, endDate, source, search, limit = 20, offset = 0 } = req.query;
+    const { startDate, endDate, source, search, sortBy, sortDir, limit = 20, offset = 0 } = req.query;
+    const SORT_COLS = { date: 'date', amount: 'amount', source: 'source' };
+    const col = SORT_COLS[sortBy] || 'date';
+    const dir = sortDir === 'ASC' ? 'ASC' : 'DESC';
+
     const conditions = ['user_id = $1'];
     const params = [req.user.userId]; let idx = 2;
     if (startDate) { conditions.push(`date >= $${idx++}`); params.push(startDate); }
@@ -20,7 +24,7 @@ router.get('/', auth, async (req, res, next) => {
     const [countRow, rows] = await Promise.all([
       queryOne(`SELECT COUNT(*)::int AS cnt FROM incomes WHERE ${where}`, params),
       query(
-        `SELECT * FROM incomes WHERE ${where} ORDER BY date DESC, created_at DESC LIMIT $${idx++} OFFSET $${idx}`,
+        `SELECT * FROM incomes WHERE ${where} ORDER BY ${col} ${dir}, created_at DESC LIMIT $${idx++} OFFSET $${idx}`,
         [...params, Number(limit), Number(offset)]
       ),
     ]);

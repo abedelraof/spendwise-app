@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Trash2, Pencil, TrendingUp, Plus, X } from 'lucide-react';
+import { Trash2, Pencil, TrendingUp, Plus, X, ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
 import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import Modal from '../components/common/Modal';
@@ -38,6 +38,25 @@ const SOURCE_COLORS = {
   Gift:       'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300',
   Other:      'bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-slate-300',
 };
+
+function SortTh({ col, sortBy, sortDir, onSort, children, className = '' }) {
+  const active = sortBy === col;
+  return (
+    <th
+      onClick={() => onSort(col)}
+      className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider cursor-pointer select-none group transition-colors
+        ${active ? 'text-brand-600 dark:text-brand-400' : 'text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300'}
+        ${className}`}
+    >
+      <span className="inline-flex items-center gap-1">
+        {children}
+        {active
+          ? (sortDir === 'DESC' ? <ChevronDown size={12} /> : <ChevronUp size={12} />)
+          : <ChevronsUpDown size={11} className="opacity-30 group-hover:opacity-60" />}
+      </span>
+    </th>
+  );
+}
 
 const todayStr    = () => new Date().toISOString().split('T')[0];
 const monthStart  = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`; };
@@ -133,6 +152,7 @@ export default function Income() {
   const [filters, setFilters] = useState({
     startDate: monthStart(), endDate: todayStr(),
     source: '', search: '',
+    sortBy: 'date', sortDir: 'DESC',
   });
   const [page,       setPage]       = useState(0);
   const [incomes,    setIncomes]    = useState([]);
@@ -162,9 +182,18 @@ export default function Income() {
   const clearFilters = () => {
     const p = presetDates('month');
     setDatePreset('month');
-    setFilters({ startDate: p.s, endDate: p.e, source: '', search: '' });
+    setFilters({ startDate: p.s, endDate: p.e, source: '', search: '', sortBy: 'date', sortDir: 'DESC' });
     setPage(0);
   };
+
+  function handleSort(col) {
+    setFilters(f => ({
+      ...f,
+      sortBy: col,
+      sortDir: f.sortBy === col && f.sortDir === 'DESC' ? 'ASC' : 'DESC',
+    }));
+    setPage(0);
+  }
   function applyPreset(id) {
     setDatePreset(id);
     const p = presetDates(id);
@@ -285,10 +314,10 @@ export default function Income() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 dark:bg-slate-700/40 border-b border-gray-100 dark:border-slate-700">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Date</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Description</th>
+                  <SortTh col="date"        sortBy={filters.sortBy} sortDir={filters.sortDir} onSort={handleSort}>Date</SortTh>
+                  <SortTh col="description" sortBy={filters.sortBy} sortDir={filters.sortDir} onSort={handleSort}>Description</SortTh>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider hidden sm:table-cell">Source</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Amount</th>
+                  <SortTh col="amount" sortBy={filters.sortBy} sortDir={filters.sortDir} onSort={handleSort} className="!text-right">Amount</SortTh>
                   <th className="px-4 py-3 w-20"></th>
                 </tr>
               </thead>

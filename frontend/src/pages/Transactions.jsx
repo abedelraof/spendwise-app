@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Download, Trash2, Pencil, CreditCard, ChevronDown, X, ArrowLeftRight, Repeat2, Plus, RefreshCw } from 'lucide-react';
+import { Download, Trash2, Pencil, CreditCard, ChevronDown, X, ArrowLeftRight, Repeat2, Plus, RefreshCw, ChevronUp, ChevronsUpDown } from 'lucide-react';
 import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import { getExpenses, deleteExpense, bulkDeleteExpenses, updateExpense } from '../api/expensesApi';
@@ -34,6 +34,25 @@ function presetDates(id) {
   if (id === '3m')    return { s: iso(new Date(y, m-2, 1)), e: iso(new Date(y, m+1, 0)) };
   if (id === 'year')  return { s: iso(new Date(y, 0, 1)),   e: iso(new Date(y, 11, 31)) };
   return null;
+}
+
+function SortTh({ col, sortBy, sortDir, onSort, children, className = '' }) {
+  const active = sortBy === col;
+  return (
+    <th
+      onClick={() => onSort(col)}
+      className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider cursor-pointer select-none group transition-colors
+        ${active ? 'text-brand-600 dark:text-brand-400' : 'text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300'}
+        ${className}`}
+    >
+      <span className="inline-flex items-center gap-1">
+        {children}
+        {active
+          ? (sortDir === 'DESC' ? <ChevronDown size={12} /> : <ChevronUp size={12} />)
+          : <ChevronsUpDown size={11} className="opacity-30 group-hover:opacity-60" />}
+      </span>
+    </th>
+  );
 }
 
 const emptyRecurringForm = {
@@ -221,6 +240,15 @@ export default function Transactions() {
     setPage(0);
   }
 
+  function handleSort(col) {
+    setFilters(f => ({
+      ...f,
+      sortBy: col,
+      sortDir: f.sortBy === col && f.sortDir === 'DESC' ? 'ASC' : 'DESC',
+    }));
+    setPage(0);
+  }
+
   async function handleDelete(id) {
     if (!confirm('Delete this expense?')) return;
     try { await deleteExpense(api, id); fetchExpenses(); showToast('Deleted'); }
@@ -343,14 +371,11 @@ export default function Transactions() {
               }
               return null;
             })();
-            const sortLabel = { date_DESC: 'Newest first', date_ASC: 'Oldest first', amount_DESC: 'Amount ↓', amount_ASC: 'Amount ↑' }[`${filters.sortBy}_${filters.sortDir}`];
-            const isDefaultSort = filters.sortBy === 'date' && filters.sortDir === 'DESC';
             const chips = [
               filters.search     && { key: 'search', label: `"${filters.search}"`,    clear: () => applyFilter('search', '') },
               catLabel           && { key: 'cat',    label: catLabel,                   clear: () => { setFilters(f => ({...f, categoryIds: [], subcategoryIds: []})); setPage(0); } },
               filters.minAmount  && { key: 'min',    label: `Min ${filters.minAmount}`, clear: () => applyFilter('minAmount', '') },
               filters.maxAmount  && { key: 'max',    label: `Max ${filters.maxAmount}`, clear: () => applyFilter('maxAmount', '') },
-              !isDefaultSort     && { key: 'sort',   label: sortLabel,                  clear: () => { applyFilter('sortBy','date'); applyFilter('sortDir','DESC'); } },
             ].filter(Boolean);
 
             return (
@@ -371,12 +396,6 @@ export default function Transactions() {
                   <input className="input !py-1.5 !text-xs flex-1 min-w-[130px]" placeholder="Search descriptions, notes…" value={filters.search} onChange={e => applyFilter('search', e.target.value)} />
                   <CategoryPicker showLabel={false} categories={categories} categoryIds={filters.categoryIds} subcategoryIds={filters.subcategoryIds}
                     onChange={(catId, subId) => { setFilters(f => ({...f, categoryIds: catId ? [catId] : [], subcategoryIds: subId ? [subId] : []})); setPage(0); }} />
-                  <select className="input !py-1.5 !text-xs w-36" value={`${filters.sortBy}_${filters.sortDir}`} onChange={e => { const [by, dir] = e.target.value.split('_'); applyFilter('sortBy', by); applyFilter('sortDir', dir); }}>
-                    <option value="date_DESC">Newest first</option>
-                    <option value="date_ASC">Oldest first</option>
-                    <option value="amount_DESC">Amount ↓</option>
-                    <option value="amount_ASC">Amount ↑</option>
-                  </select>
                   <button onClick={handleExport} className="btn-secondary !py-1.5 !px-2.5 !text-xs"><Download size={11} /> CSV</button>
                   <span className="text-xs text-gray-400 dark:text-slate-500 shrink-0">{total} rows</span>
                 </div>
@@ -433,10 +452,10 @@ export default function Transactions() {
                         <input type="checkbox" checked={selected.size === expenses.length && expenses.length > 0}
                           onChange={toggleAll} className="rounded accent-brand-600 cursor-pointer" />
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Date</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Description</th>
+                      <SortTh col="date"        sortBy={filters.sortBy} sortDir={filters.sortDir} onSort={handleSort}>Date</SortTh>
+                      <SortTh col="description" sortBy={filters.sortBy} sortDir={filters.sortDir} onSort={handleSort}>Description</SortTh>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider hidden sm:table-cell">Category</th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Amount</th>
+                      <SortTh col="amount" sortBy={filters.sortBy} sortDir={filters.sortDir} onSort={handleSort} className="!text-right">Amount</SortTh>
                       <th className="px-4 py-3 w-20"></th>
                     </tr>
                   </thead>
