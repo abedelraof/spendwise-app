@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Target, PieChart, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Target, Plus, Pencil, Trash2 } from 'lucide-react';
 import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import Modal from '../components/common/Modal';
@@ -275,15 +275,7 @@ export default function Planning() {
       />
 
       {/* Monthly Budgets */}
-      <div className="card p-6 space-y-5">
-        <div className="flex items-center gap-2.5 pb-4 border-b border-gray-100 dark:border-slate-700/60">
-          <div className="w-7 h-7 bg-brand-50 dark:bg-brand-900/30 rounded-lg flex items-center justify-center">
-            <PieChart size={14} className="text-brand-600 dark:text-brand-400" />
-          </div>
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Monthly Budgets</h2>
-        </div>
-        <BudgetManager budgets={budgets} categories={categories} api={api} onRefresh={fetchAll} />
-      </div>
+      <BudgetManager budgets={budgets} categories={categories} api={api} onRefresh={fetchAll} />
 
       {/* Modals */}
       {showAddGoal && (
