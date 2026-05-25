@@ -35,9 +35,20 @@ export default function FinanceChat() {
     } finally { setLoading(false); }
   }
 
-  function useSuggestion(s) {
+  async function useSuggestion(s) {
     setQuestion(s);
     setAnswer('');
+    setLoading(true);
+    try {
+      const data = await askQuestion(api, s);
+      setAnswer(data.answer);
+    } catch (err) {
+      if (err.response?.status === 402) {
+        showToast('Add a Claude API key in Settings to use this feature', 'error');
+      } else {
+        showToast('Failed to get answer', 'error');
+      }
+    } finally { setLoading(false); }
   }
 
   return (

@@ -5,6 +5,7 @@ const categoryModel = require('../models/categoryModel');
 const { parseExpenses, answerQuestion } = require('../services/aiService');
 const { query } = require('../db/database');
 const { getDashboardStats } = require('../services/expenseService');
+const { getMonthRange } = require('../utils/dateUtils');
 
 router.post('/parse', auth, async (req, res, next) => {
   try {
@@ -40,6 +41,8 @@ router.post('/ask', auth, async (req, res, next) => {
     }
 
     const userId = req.user.userId;
+    const now = new Date();
+    const { start: monthStart } = getMonthRange(now.getFullYear(), now.getMonth() + 1);
 
     const [expenses, categories, incomes, budgets, goals, accounts, stats] = await Promise.all([
       query(
@@ -55,9 +58,9 @@ router.post('/ask', auth, async (req, res, next) => {
         `SELECT c.name AS category, SUM(e.amount * e.exchange_rate)::float AS total
          FROM expenses e
          LEFT JOIN categories c ON e.category_id = c.id
-         WHERE e.user_id = $1 AND e.date >= date_trunc('month', CURRENT_DATE)
+         WHERE e.user_id = $1 AND e.date >= $2
          GROUP BY c.name ORDER BY total DESC`,
-        [userId]
+        [userId, monthStart]
       ),
       query(
         `SELECT date, amount, currency, exchange_rate, source, description
@@ -71,10 +74,10 @@ router.post('/ask', auth, async (req, res, next) => {
          LEFT JOIN categories c ON b.category_id = c.id
          LEFT JOIN expenses e ON e.category_id = b.category_id
            AND e.user_id = b.user_id
-           AND e.date >= date_trunc('month', CURRENT_DATE)
+           AND e.date >= $2
          WHERE b.user_id = $1
          GROUP BY b.id, c.name, b.amount`,
-        [userId]
+        [userId, monthStart]
       ),
       query(
         `SELECT name, target_amount::float, target_currency, current_amount::float, target_date
