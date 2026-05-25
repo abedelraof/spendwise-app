@@ -150,6 +150,9 @@ export default function Reports() {
       {/* Stats bar — this month's summary */}
       <StatsBar stats={dashStats} currency={currency} />
 
+      {/* Monthly AI Insight */}
+      <MonthlyInsight />
+
       {/* Filter bar */}
       <div className="card px-3 py-2.5 space-y-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -347,9 +350,6 @@ export default function Reports() {
           </ChartCard>
         </div>
       )}
-
-      {/* Monthly AI Insight */}
-      <MonthlyInsight />
 
       {/* Latest Transactions */}
       <LatestTransactions expenses={expenses} onDelete={handleDeleteExpense} />
