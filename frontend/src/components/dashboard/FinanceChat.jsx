@@ -13,10 +13,10 @@ const ALL_SUGGESTIONS = [
   'How much have I saved toward my goals?',
   'What are my top 3 expense categories?',
   'How much did I spend on food this month?',
-  'What's my average daily spend this week?',
-  'Do I have any budgets I'm about to exceed?',
+  'What is my average daily spend this week?',
+  'Do I have any budgets about to be exceeded?',
   'How does this month compare to last month?',
-  'What's my total income vs total expenses?',
+  'What is my total income vs total expenses?',
   'Which account has the highest balance?',
 ];
 
