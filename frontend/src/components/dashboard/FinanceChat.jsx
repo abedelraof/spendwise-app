@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { MessageCircle, Sparkles, Loader2, Send, RefreshCw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import useApi from '../../hooks/useApi';
 import { askQuestion } from '../../api/aiApi';
 import { showToast } from '../common/Toast';
@@ -130,8 +131,11 @@ export default function FinanceChat() {
       {answer && !loading && (
         <div className="border-t border-gray-100 dark:border-slate-700/60 pt-4">
           <div className="prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-slate-300
-            prose-p:my-1.5 prose-ul:my-1.5 prose-li:my-0.5 prose-headings:text-gray-900 dark:prose-headings:text-white">
-            <ReactMarkdown>{answer}</ReactMarkdown>
+            prose-p:my-1.5 prose-ul:my-1.5 prose-li:my-0.5 prose-headings:text-gray-900 dark:prose-headings:text-white
+            prose-table:w-full prose-thead:bg-gray-50 dark:prose-thead:bg-slate-700/50
+            prose-th:px-3 prose-th:py-2 prose-th:text-left prose-th:text-xs prose-th:font-semibold prose-th:text-gray-600 dark:prose-th:text-slate-300
+            prose-td:px-3 prose-td:py-2 prose-td:text-xs prose-td:border-t prose-td:border-gray-100 dark:prose-td:border-slate-700/60">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{answer}</ReactMarkdown>
           </div>
           <button
             onClick={reset}
