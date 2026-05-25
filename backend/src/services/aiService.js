@@ -167,4 +167,74 @@ async function mapCsvColumns(headers, sampleRows, encryptedApiKey) {
   return extractJsonObj(msg.content[0].text);
 }
 
-module.exports = { parseExpenses, generateInsight, mapCsvColumns };
+function buildFinanceChatPrompt(ctx, currency) {
+  const fmt = n => (n ?? 0).toLocaleString('en', { maximumFractionDigits: 0 });
+
+  const catBreakdown = ctx.categories.length
+    ? ctx.categories.map(c => `  - ${c.category ?? 'Uncategorized'}: ${fmt(c.total)} ${currency}`).join('\n')
+    : '  (no data)';
+
+  const recentExpenses = ctx.expenses.length
+    ? ctx.expenses.map(e => `  ${e.date} | ${e.category ?? '-'} | ${fmt(e.amount)} ${e.currency}${e.description ? ' | ' + e.description : ''}`).join('\n')
+    : '  (none)';
+
+  const incomeLines = ctx.incomes.length
+    ? ctx.incomes.map(i => `  ${i.date} | ${i.source} | ${fmt(i.amount)} ${i.currency}${i.description ? ' | ' + i.description : ''}`).join('\n')
+    : '  (none)';
+
+  const budgetLines = ctx.budgets.length
+    ? ctx.budgets.map(b => `  ${b.category}: spent ${fmt(b.spent)} of ${fmt(b.budget_limit)} ${currency} (${b.budget_limit > 0 ? Math.round((b.spent / b.budget_limit) * 100) : 0}%)`).join('\n')
+    : '  (none)';
+
+  const goalLines = ctx.goals.length
+    ? ctx.goals.map(g => `  ${g.name}: ${fmt(g.current_amount)} / ${fmt(g.target_amount)} ${g.target_currency}${g.target_date ? ' — target ' + g.target_date : ''}`).join('\n')
+    : '  (none)';
+
+  const accountLines = ctx.accounts.length
+    ? ctx.accounts.map(a => `  ${a.name} (${a.type}): ${a.latest_balance != null ? fmt(a.latest_balance) + ' ' + a.currency : 'no snapshot'}`).join('\n')
+    : '  (none)';
+
+  const s = ctx.stats;
+  return `You are a personal finance assistant. Answer the user's question using ONLY the financial data provided below. Be concise, specific, and friendly. Cite actual numbers from the data. If the answer isn't in the data, say so clearly.
+
+Home currency: ${currency}
+
+## This Month Summary
+- Spent: ${fmt(s.totalThisMonth)} ${currency}
+- Income: ${fmt(s.incomeThisMonth)} ${currency}
+- Cash flow: ${fmt(s.incomeThisMonth - s.totalThisMonth)} ${currency}
+- Transactions: ${s.transactionCount}
+- Top category: ${s.topCategory ?? 'N/A'}
+- Daily average spend: ${fmt(s.dailyAverage)} ${currency}
+
+## Category Breakdown (This Month)
+${catBreakdown}
+
+## Recent Expenses (last 50)
+${recentExpenses}
+
+## Recent Income (last 20)
+${incomeLines}
+
+## Budgets
+${budgetLines}
+
+## Savings Goals
+${goalLines}
+
+## Account Balances
+${accountLines}`;
+}
+
+async function answerQuestion(question, context, encryptedApiKey, currency) {
+  const client = await getClient(encryptedApiKey);
+  const msg = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 1024,
+    system: buildFinanceChatPrompt(context, currency),
+    messages: [{ role: 'user', content: question }],
+  });
+  return msg.content[0].text.trim();
+}
+
+module.exports = { parseExpenses, generateInsight, mapCsvColumns, answerQuestion };

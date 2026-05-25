@@ -10,6 +10,7 @@ import { createExpenses } from '../api/expensesApi';
 import { parseExpenses } from '../api/aiApi';
 import { getCategories, createCategory, createSubcategory } from '../api/categoriesApi';
 import { getSettings } from '../api/settingsApi';
+import FinanceChat from '../components/dashboard/FinanceChat';
 
 function greeting() {
   const h = new Date().getHours();
@@ -158,6 +159,9 @@ export default function Dashboard() {
           onClose={() => setParsed(null)}
         />
       )}
+
+      {/* Ask Claude about your finances */}
+      <FinanceChat />
     </div>
   );
 }
