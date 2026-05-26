@@ -1,16 +1,62 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import { showToast } from '../components/common/Toast';
 import Spinner from '../components/common/Spinner';
 import ExpenseInputPanel from '../components/dashboard/ExpenseInputPanel';
 import ParsedExpenseConfirm from '../components/dashboard/ParsedExpenseConfirm';
+import BudgetAlerts from '../components/dashboard/BudgetAlerts';
+import UpcomingBills from '../components/dashboard/UpcomingBills';
 import { getDashboardStats } from '../api/reportsApi';
 import { createExpenses } from '../api/expensesApi';
 import { parseExpenses } from '../api/aiApi';
 import { getCategories, createCategory, createSubcategory } from '../api/categoriesApi';
 import { getSettings } from '../api/settingsApi';
+import { getBudgets } from '../api/budgetsApi';
+import { getGoals } from '../api/goalsApi';
+import { getUpcomingRecurring } from '../api/recurringApi';
 import FinanceChat from '../components/dashboard/FinanceChat';
+
+function GoalsStrip({ goals }) {
+  if (!goals?.length) return null;
+  const shown = goals.slice(0, 3);
+  const fmt = n => Number(n ?? 0).toLocaleString('en', { maximumFractionDigits: 0 });
+  return (
+    <div className="card p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Savings Goals</h3>
+        <Link to="/app/planning" className="text-xs font-medium text-brand-600 dark:text-brand-400 hover:underline">
+          View all →
+        </Link>
+      </div>
+      <div className="space-y-3">
+        {shown.map(goal => {
+          const current = goal.account_id && goal.latest_balance != null ? goal.latest_balance : (goal.current_amount ?? 0);
+          const pct = goal.target_amount > 0
+            ? Math.min(100, Math.round((current / goal.target_amount) * 100)) : 0;
+          return (
+            <div key={goal.id}>
+              <div className="flex items-center justify-between text-xs mb-1">
+                <span className="flex items-center gap-1.5 font-medium text-gray-700 dark:text-slate-300 truncate">
+                  <span>{goal.icon}</span> {goal.name}
+                </span>
+                <span className="shrink-0 ml-2 font-semibold text-brand-600 dark:text-brand-400">{pct}%</span>
+              </div>
+              <div className="w-full bg-gray-100 dark:bg-slate-700 rounded-full h-1.5">
+                <div className={`h-1.5 rounded-full transition-all duration-500 ${pct >= 100 ? 'bg-emerald-500' : 'bg-brand-500'}`}
+                  style={{ width: `${pct}%` }} />
+              </div>
+              <p className="text-[11px] text-gray-400 dark:text-slate-500 mt-0.5">
+                {fmt(current)} / {fmt(goal.target_amount)} {goal.target_currency}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function greeting() {
   const h = new Date().getHours();
@@ -55,17 +101,29 @@ export default function Dashboard() {
   const [parsing,    setParsing]    = useState(false);
   const [parsed,     setParsed]     = useState(null);
   const [saving,     setSaving]     = useState(false);
+  const [budgets,    setBudgets]    = useState([]);
+  const [goals,      setGoals]      = useState([]);
+  const [upcomingBills, setUpcomingBills] = useState([]);
 
   const fetchAll = useCallback(async () => {
     try {
-      const [statsRes, catsRes, settingsRes] = await Promise.allSettled([
+      const [statsRes, catsRes, settingsRes, budgetsRes, goalsRes, billsRes] = await Promise.allSettled([
         getDashboardStats(api),
         getCategories(api),
         getSettings(api),
+        getBudgets(api),
+        getGoals(api),
+        getUpcomingRecurring(api, 7),
       ]);
       if (statsRes.status    === 'fulfilled') setStats(statsRes.value);
       if (catsRes.status     === 'fulfilled') setCategories(catsRes.value.categories);
       if (settingsRes.status === 'fulfilled') setCurrency(settingsRes.value.currency || user?.currency || 'EGP');
+      if (budgetsRes.status  === 'fulfilled') setBudgets(budgetsRes.value.budgets || []);
+      if (goalsRes.status    === 'fulfilled') setGoals((goalsRes.value.goals || []).filter(g => {
+        const current = g.account_id && g.latest_balance != null ? g.latest_balance : (g.current_amount ?? 0);
+        return current < g.target_amount;
+      }));
+      if (billsRes.status    === 'fulfilled') setUpcomingBills(billsRes.value.data || []);
     } catch { showToast('Failed to load dashboard', 'error'); }
     finally { setLoading(false); }
   }, [api, user]);
@@ -159,6 +217,15 @@ export default function Dashboard() {
           onClose={() => setParsed(null)}
         />
       )}
+
+      {/* Budget Alerts */}
+      <BudgetAlerts budgets={budgets} />
+
+      {/* Upcoming Bills */}
+      <UpcomingBills bills={upcomingBills} />
+
+      {/* Goals Progress */}
+      <GoalsStrip goals={goals} />
 
       {/* Ask Claude about your finances */}
       <FinanceChat />
