@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Download, Trash2, Pencil, CreditCard, ChevronDown, X, ArrowLeftRight, Repeat2, Plus, RefreshCw, ChevronUp, ChevronsUpDown } from 'lucide-react';
+import { Trash2, Pencil, CreditCard, ChevronDown, X, ArrowLeftRight, Repeat2, Plus, RefreshCw, ChevronUp, ChevronsUpDown } from 'lucide-react';
 import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import { getExpenses, deleteExpense, bulkDeleteExpenses, updateExpense } from '../api/expensesApi';
 import { getCategories } from '../api/categoriesApi';
 import { getRecurring, createRecurring, deleteRecurring } from '../api/recurringApi';
-import { exportCsv } from '../api/reportsApi';
 import { showToast } from '../components/common/Toast';
 import Spinner from '../components/common/Spinner';
 import EmptyState from '../components/common/EmptyState';
@@ -60,9 +59,8 @@ const emptyRecurringForm = {
   description: '', tags: '', interval: 'monthly', nextDueDate: today(),
 };
 
-function CategoryPicker({ categories, categoryIds, subcategoryIds, onChange, showLabel = true }) {
-  const [open, setOpen]     = useState(false);
-  const [search, setSearch] = useState('');
+function CategoryPicker({ categories, categoryIds, subcategoryIds, onChange }) {
+  const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
   useEffect(() => {
@@ -71,47 +69,43 @@ function CategoryPicker({ categories, categoryIds, subcategoryIds, onChange, sho
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  const q = search.toLowerCase();
-  const filtered = categories
-    .map(c => ({
-      ...c,
-      matchSelf: c.name.toLowerCase().includes(q),
-      subs: (c.subcategories || []).filter(s => !q || s.name.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)),
-    }))
-    .filter(c => c.matchSelf || c.subs.length > 0);
+  const totalSelected = categoryIds.length + subcategoryIds.length;
 
-  const selectedLabel = (() => {
-    if (subcategoryIds[0]) {
+  const label = (() => {
+    if (!totalSelected) return <span className="text-gray-400 dark:text-slate-500">All categories</span>;
+    if (totalSelected === 1) {
+      if (categoryIds[0]) {
+        const c = categories.find(c => c.id === categoryIds[0]);
+        return c ? `${c.icon ?? ''} ${c.name}`.trim() : 'Category';
+      }
       for (const c of categories) {
         const s = (c.subcategories || []).find(s => s.id === subcategoryIds[0]);
-        if (s) return `${c.icon ?? ''} ${c.name} › ${s.name}`;
+        if (s) return `${c.icon ?? ''} ${c.name} › ${s.name}`.trim();
       }
     }
-    if (categoryIds[0]) {
-      const c = categories.find(c => c.id === categoryIds[0]);
-      return c ? `${c.icon ?? ''} ${c.name}` : '';
-    }
-    return null;
+    return `${totalSelected} categories selected`;
   })();
 
-  function select(catId, subId) {
-    onChange(catId, subId);
-    setOpen(false);
-    setSearch('');
+  function toggleCat(id) {
+    const next = categoryIds.includes(id) ? categoryIds.filter(x => x !== id) : [...categoryIds, id];
+    onChange(next, subcategoryIds);
   }
 
+  function toggleSub(id) {
+    const next = subcategoryIds.includes(id) ? subcategoryIds.filter(x => x !== id) : [...subcategoryIds, id];
+    onChange(categoryIds, next);
+  }
+
+  function clearAll() { onChange([], []); }
+
   return (
-    <div ref={ref} className="relative flex flex-col gap-0.5">
-      {showLabel && <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-slate-500 pl-0.5">Category</span>}
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        className="input !py-1.5 !text-xs w-44 flex items-center justify-between gap-1 text-left"
-      >
-        <span className="truncate">{selectedLabel ?? <span className="text-gray-400 dark:text-slate-500">All categories</span>}</span>
-        <div className="flex items-center gap-0.5 shrink-0">
-          {selectedLabel && (
-            <span onMouseDown={e => { e.stopPropagation(); select(null, null); }}
+    <div ref={ref} className="relative flex-1 min-w-0">
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className="input !py-1.5 !text-xs w-full flex items-center justify-between gap-1 text-left">
+        <span className="truncate text-xs">{label}</span>
+        <div className="flex items-center gap-1 shrink-0">
+          {totalSelected > 0 && (
+            <span onMouseDown={e => { e.stopPropagation(); clearAll(); }}
               className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-400">
               <X size={10} />
             </span>
@@ -122,40 +116,33 @@ function CategoryPicker({ categories, categoryIds, subcategoryIds, onChange, sho
 
       {open && (
         <div className="absolute top-full left-0 mt-1 w-56 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-lg z-50 overflow-hidden">
-          <div className="p-2 border-b border-gray-100 dark:border-slate-700">
-            <input
-              autoFocus
-              className="input !py-1 !text-xs w-full"
-              placeholder="Search categories…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
-          </div>
-          <div className="max-h-56 overflow-y-auto py-1">
-            {!search && (
-              <button onClick={() => select(null, null)}
-                className="w-full text-left px-3 py-1.5 text-xs text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700/60">
-                All categories
-              </button>
-            )}
-            {filtered.map(c => (
+          <div className="max-h-60 overflow-y-auto py-1">
+            {categories.map(c => (
               <div key={c.id}>
-                <button onClick={() => select(c.id, null)}
-                  className="w-full text-left px-3 py-1.5 text-xs font-medium text-gray-800 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700/60 flex items-center gap-1.5">
-                  <span>{c.icon}</span>{c.name}
-                </button>
-                {c.subs.map(s => (
-                  <button key={s.id} onClick={() => select(null, s.id)}
-                    className="w-full text-left pl-7 pr-3 py-1.5 text-xs text-gray-500 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700/60">
-                    ↳ {s.name}
-                  </button>
+                <label className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-700/60 cursor-pointer">
+                  <input type="checkbox" checked={categoryIds.includes(c.id)}
+                    onChange={() => toggleCat(c.id)}
+                    className="rounded accent-brand-600 cursor-pointer shrink-0" />
+                  <span className="text-xs font-medium text-gray-800 dark:text-slate-200 flex items-center gap-1.5">
+                    {c.icon && <span>{c.icon}</span>}{c.name}
+                  </span>
+                </label>
+                {(c.subcategories || []).map(s => (
+                  <label key={s.id} className="flex items-center gap-2 pl-7 pr-3 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-700/60 cursor-pointer">
+                    <input type="checkbox" checked={subcategoryIds.includes(s.id)}
+                      onChange={() => toggleSub(s.id)}
+                      className="rounded accent-brand-600 cursor-pointer shrink-0" />
+                    <span className="text-xs text-gray-500 dark:text-slate-400">↳ {s.name}</span>
+                  </label>
                 ))}
               </div>
             ))}
-            {filtered.length === 0 && (
-              <p className="px-3 py-3 text-xs text-gray-400 dark:text-slate-500 text-center">No matches</p>
-            )}
           </div>
+          {totalSelected > 0 && (
+            <div className="border-t border-gray-100 dark:border-slate-700 px-3 py-2">
+              <button onClick={clearAll} className="text-xs text-gray-400 hover:text-red-500 transition-colors">Clear selection</button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -177,6 +164,7 @@ export default function Transactions() {
     search: searchParams.get('search') || '',
     categoryIds: [], subcategoryIds: [],
     minAmount: '', maxAmount: '',
+    tags: '',
     sortBy: 'date', sortDir: 'DESC',
   });
   const [page, setPage]             = useState(0);
@@ -230,7 +218,7 @@ export default function Transactions() {
   const clearFilters = () => {
     const p = presetDates('month');
     setDatePreset('month');
-    setFilters({ startDate: p.s, endDate: p.e, search: '', categoryIds: [], subcategoryIds: [], minAmount: '', maxAmount: '', sortBy: 'date', sortDir: 'DESC' });
+    setFilters({ startDate: p.s, endDate: p.e, search: '', categoryIds: [], subcategoryIds: [], minAmount: '', maxAmount: '', tags: '', sortBy: 'date', sortDir: 'DESC' });
     setPage(0);
   };
   function applyPreset(id) {
@@ -261,15 +249,6 @@ export default function Transactions() {
     catch { showToast('Failed to delete', 'error'); }
   }
 
-  async function handleExport() {
-    try {
-      const blob = await exportCsv(api, { startDate: filters.startDate, endDate: filters.endDate });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = `expenses-${filters.startDate}-${filters.endDate}.csv`; a.click();
-      URL.revokeObjectURL(url);
-    } catch { showToast('Export failed', 'error'); }
-  }
 
   async function handleUpdate(confirmed) {
     try {
@@ -358,28 +337,38 @@ export default function Transactions() {
         <>
           {/* Filters */}
           {(() => {
-            const catLabel = (() => {
-              if (filters.subcategoryIds[0]) {
+            const catChips = [
+              ...filters.categoryIds.map(id => {
+                const c = categories.find(c => c.id === id);
+                return c ? { key: `cat:${id}`, label: `${c.icon ?? ''} ${c.name}`.trim(), clear: () => { setFilters(f => ({ ...f, categoryIds: f.categoryIds.filter(x => x !== id) })); setPage(0); } } : null;
+              }),
+              ...filters.subcategoryIds.map(id => {
                 for (const c of categories) {
-                  const s = (c.subcategories || []).find(s => s.id === filters.subcategoryIds[0]);
-                  if (s) return `${c.icon ?? ''} ${c.name} › ${s.name}`;
+                  const s = (c.subcategories || []).find(s => s.id === id);
+                  if (s) return { key: `sub:${id}`, label: `${c.icon ?? ''} ${c.name} › ${s.name}`.trim(), clear: () => { setFilters(f => ({ ...f, subcategoryIds: f.subcategoryIds.filter(x => x !== id) })); setPage(0); } };
                 }
-              }
-              if (filters.categoryIds[0]) {
-                const c = categories.find(c => c.id === filters.categoryIds[0]);
-                return c ? `${c.icon ?? ''} ${c.name}` : null;
-              }
-              return null;
-            })();
+                return null;
+              }),
+            ].filter(Boolean);
+
             const chips = [
-              filters.search     && { key: 'search', label: `"${filters.search}"`,    clear: () => applyFilter('search', '') },
-              catLabel           && { key: 'cat',    label: catLabel,                   clear: () => { setFilters(f => ({...f, categoryIds: [], subcategoryIds: []})); setPage(0); } },
-              filters.minAmount  && { key: 'min',    label: `Min ${filters.minAmount}`, clear: () => applyFilter('minAmount', '') },
-              filters.maxAmount  && { key: 'max',    label: `Max ${filters.maxAmount}`, clear: () => applyFilter('maxAmount', '') },
+              filters.search    && { key: 'search', label: `"${filters.search}"`,    clear: () => applyFilter('search', '') },
+              ...catChips,
+              filters.minAmount && { key: 'min',    label: `Min ${filters.minAmount}`, clear: () => applyFilter('minAmount', '') },
+              filters.maxAmount && { key: 'max',    label: `Max ${filters.maxAmount}`, clear: () => applyFilter('maxAmount', '') },
+              filters.tags      && { key: 'tags',   label: `#${filters.tags}`,         clear: () => applyFilter('tags', '') },
             ].filter(Boolean);
 
             return (
-              <div className="card px-3 py-2.5 space-y-2">
+              <div className="card overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-100 dark:border-slate-700/60 flex items-center gap-2">
+                <span className="text-sm font-semibold text-gray-900 dark:text-white">Filters</span>
+                <span className="text-xs text-gray-400 dark:text-slate-500">
+                  {PRESETS.find(p => p.id === datePreset)?.label ?? 'Custom'} · {total} result{total !== 1 ? 's' : ''}
+                </span>
+              </div>
+              <div className="px-3 py-2.5 space-y-2">
+                {/* Row 1: Date presets + search */}
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="flex gap-0.5 p-0.5 bg-gray-100 dark:bg-slate-700/60 rounded-lg shrink-0">
                     {PRESETS.map(p => (
@@ -394,10 +383,6 @@ export default function Transactions() {
                     ))}
                   </div>
                   <input className="input !py-1.5 !text-xs flex-1 min-w-[130px]" placeholder="Search descriptions, notes…" value={filters.search} onChange={e => applyFilter('search', e.target.value)} />
-                  <CategoryPicker showLabel={false} categories={categories} categoryIds={filters.categoryIds} subcategoryIds={filters.subcategoryIds}
-                    onChange={(catId, subId) => { setFilters(f => ({...f, categoryIds: catId ? [catId] : [], subcategoryIds: subId ? [subId] : []})); setPage(0); }} />
-                  <button onClick={handleExport} className="btn-secondary !py-1.5 !px-2.5 !text-xs"><Download size={11} /> CSV</button>
-                  <span className="text-xs text-gray-400 dark:text-slate-500 shrink-0">{total} rows</span>
                 </div>
 
                 {datePreset === 'custom' && (
@@ -406,10 +391,22 @@ export default function Transactions() {
                     <input type="date" className="input !py-1.5 !text-xs w-36" value={filters.startDate} onChange={e => applyFilter('startDate', e.target.value)} />
                     <span className="text-xs text-gray-400 dark:text-slate-500">to</span>
                     <input type="date" className="input !py-1.5 !text-xs w-36" value={filters.endDate} onChange={e => applyFilter('endDate', e.target.value)} />
-                    <input type="number" className="input !py-1.5 !text-xs w-24" placeholder="Min amount" value={filters.minAmount} onChange={e => applyFilter('minAmount', e.target.value)} />
-                    <input type="number" className="input !py-1.5 !text-xs w-24" placeholder="Max amount" value={filters.maxAmount} onChange={e => applyFilter('maxAmount', e.target.value)} />
                   </div>
                 )}
+
+                {/* Row 2: Amount filters + category + tags */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs text-gray-400 dark:text-slate-500">Min</span>
+                    <input type="number" className="input !py-1.5 !text-xs w-36" placeholder="0" value={filters.minAmount} onChange={e => applyFilter('minAmount', e.target.value)} />
+                    <span className="text-xs text-gray-400 dark:text-slate-500">Max</span>
+                    <input type="number" className="input !py-1.5 !text-xs w-36" placeholder="∞" value={filters.maxAmount} onChange={e => applyFilter('maxAmount', e.target.value)} />
+                  </div>
+                  <CategoryPicker categories={categories} categoryIds={filters.categoryIds} subcategoryIds={filters.subcategoryIds}
+                    onChange={(catIds, subIds) => { setFilters(f => ({...f, categoryIds: catIds, subcategoryIds: subIds})); setPage(0); }} />
+                  <input className="input !py-1.5 !text-xs w-32" placeholder="# tag" value={filters.tags}
+                    onChange={e => applyFilter('tags', e.target.value)} />
+                </div>
 
                 {chips.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -422,6 +419,7 @@ export default function Transactions() {
                     <button onClick={clearFilters} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 transition-colors">Clear all</button>
                   </div>
                 )}
+              </div>
               </div>
             );
           })()}
@@ -476,8 +474,18 @@ export default function Transactions() {
                           <div className="flex items-center gap-1.5">
                             <span className="text-base">{e.category_icon}</span>
                             <div>
-                              <div className="text-xs font-medium text-gray-700 dark:text-gray-300">{e.category_name}</div>
-                              {e.subcategory_name && <div className="text-xs text-gray-400 dark:text-slate-500">{e.subcategory_name}</div>}
+                              <button
+                                onClick={() => { setFilters(f => ({ ...f, categoryIds: e.category_id ? [e.category_id] : [], subcategoryIds: [] })); setPage(0); }}
+                                className="text-xs font-medium text-gray-700 dark:text-gray-300 hover:text-brand-600 dark:hover:text-brand-400 transition-colors text-left">
+                                {e.category_name}
+                              </button>
+                              {e.subcategory_name && (
+                                <button
+                                  onClick={() => { setFilters(f => ({ ...f, categoryIds: [], subcategoryIds: e.subcategory_id ? [e.subcategory_id] : [] })); setPage(0); }}
+                                  className="block text-xs text-gray-400 dark:text-slate-500 hover:text-brand-500 dark:hover:text-brand-400 transition-colors text-left">
+                                  {e.subcategory_name}
+                                </button>
+                              )}
                             </div>
                           </div>
                         </td>

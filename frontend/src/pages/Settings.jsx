@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Bot, Globe, FolderOpen, Upload, CheckCircle, Trash2, ShieldAlert, Palette } from 'lucide-react';
+import { Bot, Globe, FolderOpen, Upload, CheckCircle, Trash2, ShieldAlert } from 'lucide-react';
 import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import { getSettings, updateSettings } from '../api/settingsApi';
@@ -115,14 +115,6 @@ export default function Settings() {
   const [loading, setLoading]     = useState(true);
   const [saving, setSaving]       = useState(null);
   const [showClearModal, setShowClearModal] = useState(false);
-  const [panelStyle, setPanelStyle] = useState(() => parseInt(localStorage.getItem('eb_panel_style') || '1'));
-
-  function choosePanelStyle(n) {
-    setPanelStyle(n);
-    localStorage.setItem('eb_panel_style', String(n));
-    window.dispatchEvent(new Event('eb_panel_style_change'));
-  }
-
   async function fetchAll() {
     try {
       const [s, c] = await Promise.all([getSettings(api), getCategories(api)]);
@@ -199,30 +191,6 @@ export default function Settings() {
                 <option value="system">System (follows OS)</option>
                 <option value="high-contrast">High Contrast</option>
               </select>
-            </div>
-          </div>
-          <div className="pt-1">
-            <label className="label flex items-center gap-1.5"><Palette size={13} /> Log Expense Style</label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1">
-              {[
-                { id: 1, label: 'Aurora',   tagline: 'Purple · vibrant',   bar: 'bg-gradient-to-r from-violet-500 to-purple-500' },
-                { id: 2, label: 'Slate',    tagline: 'Dark · atmospheric', bar: 'bg-gradient-to-r from-slate-700 to-cyan-600'   },
-                { id: 3, label: 'Sunrise',  tagline: 'Warm · friendly',    bar: 'bg-gradient-to-r from-amber-400 to-rose-500'   },
-                { id: 4, label: 'Terminal', tagline: 'Dark · developer',   bar: 'bg-gradient-to-r from-gray-900 to-emerald-800' },
-              ].map(s => (
-                <button key={s.id} onClick={() => choosePanelStyle(s.id)}
-                  className={`rounded-xl overflow-hidden border-2 transition-all text-left ${
-                    panelStyle === s.id
-                      ? 'border-brand-500 ring-2 ring-brand-500/20'
-                      : 'border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600'
-                  }`}>
-                  <div className={`h-2 w-full ${s.bar}`} />
-                  <div className="px-2.5 py-2">
-                    <p className={`text-xs font-semibold leading-tight ${panelStyle === s.id ? 'text-brand-600 dark:text-brand-400' : 'text-gray-700 dark:text-slate-300'}`}>{s.label}</p>
-                    <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-0.5">{s.tagline}</p>
-                  </div>
-                </button>
-              ))}
             </div>
           </div>
           <button onClick={savePreferences} disabled={saving === 'prefs'} className="btn-primary">

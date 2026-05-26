@@ -15,3 +15,9 @@ export const getTopDays = (api, startDate, endDate, limit) =>
 
 export const exportCsv = (api, params) =>
   api.get('/reports/export-csv', { params, responseType: 'blob' }).then(r => r.data);
+
+export const getIncomeVsExpenses = (api, startDate, endDate) =>
+  api.get('/reports/income-vs-expenses', { params: { startDate, endDate } }).then(r => r.data);
+
+export const getNetWorthTrend = (api) =>
+  api.get('/reports/net-worth-trend').then(r => r.data);

@@ -2,11 +2,12 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
   LineChart, Line, PieChart, Pie, CartesianGrid,
+  AreaChart, Area, Legend, ComposedChart,
 } from 'recharts';
 import { Download, BarChart2 } from 'lucide-react';
 import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
-import { getSpendingTrend, getCategoryBreakdown, getTopDays, exportCsv, getDashboardStats } from '../api/reportsApi';
+import { getSpendingTrend, getCategoryBreakdown, getTopDays, exportCsv, getDashboardStats, getIncomeVsExpenses, getNetWorthTrend } from '../api/reportsApi';
 import { showToast } from '../components/common/Toast';
 import Spinner from '../components/common/Spinner';
 import EmptyState from '../components/common/EmptyState';
@@ -89,21 +90,27 @@ export default function Reports() {
   const [datePreset, setDatePreset] = useState('month');
   const [startDate, setStartDate] = useState(monthStart());
   const [endDate, setEndDate]     = useState(today());
-  const [data, setData]           = useState({ trend: [], breakdown: [], topDays: [] });
-  const [loading, setLoading]     = useState(true);
-  const [dashStats, setDashStats] = useState(null);
+  const [data, setData]              = useState({ trend: [], breakdown: [], topDays: [] });
+  const [loading, setLoading]        = useState(true);
+  const [dashStats, setDashStats]    = useState(null);
+  const [incomeVsExp, setIncomeVsExp] = useState([]);
+  const [netWorth, setNetWorth]      = useState([]);
 
   const fetchReports = useCallback(async () => {
     setLoading(true);
     try {
-      const [trend, breakdown, topDays, statsRes] = await Promise.all([
+      const [trend, breakdown, topDays, statsRes, iveRes, nwtRes] = await Promise.all([
         getSpendingTrend(api, startDate, endDate),
         getCategoryBreakdown(api, startDate, endDate),
         getTopDays(api, startDate, endDate, 10),
         getDashboardStats(api).catch(() => null),
+        getIncomeVsExpenses(api, startDate, endDate).catch(() => ({ data: [] })),
+        getNetWorthTrend(api).catch(() => ({ data: [] })),
       ]);
       setData({ trend: trend.data, breakdown: breakdown.data, topDays: topDays.data });
       if (statsRes) setDashStats(statsRes);
+      setIncomeVsExp(iveRes.data || []);
+      setNetWorth(nwtRes.data || []);
     } catch { showToast('Failed to load reports', 'error'); }
     setLoading(false);
   }, [api, startDate, endDate]);
@@ -185,6 +192,52 @@ useEffect(() => { fetchReports(); }, [fetchReports]);
         <div className="flex justify-center py-14"><Spinner size="lg" /></div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+          {/* Income vs Expenses */}
+          <div className="card p-5 lg:col-span-2">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">Income vs Expenses</h3>
+            {!incomeVsExp.length ? (
+              <EmptyState icon="💰" title="No data" description="No income or expense records in this range" />
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <ComposedChart data={incomeVsExp} barCategoryGap="25%">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => fmt(v)} />
+                  <Tooltip {...tooltipStyle} formatter={(v, name) => [`${fmt(v)} ${currency}`, name.charAt(0).toUpperCase() + name.slice(1)]} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Bar dataKey="income"   name="Income"   fill="#10b981" radius={[4,4,0,0]} />
+                  <Bar dataKey="expenses" name="Expenses" fill="#ef4444" radius={[4,4,0,0]} />
+                  <Line type="monotone" dataKey="net" stroke="#7c3aed" strokeWidth={2} dot={false} name="Net" />
+                </ComposedChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+
+          {/* Net Worth Trend */}
+          <div className="card p-5 lg:col-span-2">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">Net Worth Trend</h3>
+            {!netWorth.length ? (
+              <EmptyState icon="🏦" title="No snapshots yet" description="Record account balances to track your net worth over time" />
+            ) : (
+              <ResponsiveContainer width="100%" height={240}>
+                <AreaChart data={netWorth}>
+                  <defs>
+                    <linearGradient id="nwGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%"  stopColor="#7c3aed" stopOpacity={0.25} />
+                      <stop offset="95%" stopColor="#7c3aed" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={d => d.slice(5)} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => fmt(v)} />
+                  <Tooltip {...tooltipStyle} formatter={(v) => [`${fmt(v)} ${currency}`, 'Net Worth']} />
+                  <Area type="monotone" dataKey="net_worth" stroke="#7c3aed" strokeWidth={2.5}
+                    fill="url(#nwGrad)" dot={false} activeDot={{ r: 5, fill: '#7c3aed' }} />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </div>
 
           {/* Daily Spending Breakdown */}
           <div className="card p-5 lg:col-span-2">
