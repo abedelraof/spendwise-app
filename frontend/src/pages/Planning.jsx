@@ -13,20 +13,21 @@ import { getCategories } from '../api/categoriesApi';
 import { getAccounts } from '../api/accountsApi';
 import { getSettings } from '../api/settingsApi';
 
-const CURRENCIES = ['EGP', 'USD', 'EUR', 'GBP', 'ILS', 'SAR', 'AED', 'CAD', 'JPY', 'CHF', 'CNY'];
 const GOAL_ICONS = ['🎯', '🏠', '🚗', '✈️', '💍', '🎓', '💰', '🏖️', '📱', '🏋️'];
 
 // ── Goal Form Modal ────────────────────────────────────────────────────────────
 function GoalFormModal({ goal, accounts, defaultCurrency, onSave, onClose }) {
   const isEdit = !!goal;
-  const [name,           setName]           = useState(goal?.name ?? '');
-  const [icon,           setIcon]           = useState(goal?.icon ?? '🎯');
-  const [targetAmount,   setTargetAmount]   = useState(String(goal?.target_amount ?? ''));
-  const [targetCurrency, setTargetCurrency] = useState(goal?.target_currency ?? defaultCurrency ?? 'EGP');
-  const [accountId,      setAccountId]      = useState(String(goal?.account_id ?? ''));
-  const [currentAmount,  setCurrentAmount]  = useState(String(goal?.current_amount ?? '0'));
-  const [targetDate,     setTargetDate]     = useState(goal?.target_date ?? '');
-  const [saving,         setSaving]         = useState(false);
+  const [name,          setName]          = useState(goal?.name ?? '');
+  const [icon,          setIcon]          = useState(goal?.icon ?? '🎯');
+  const [targetAmount,  setTargetAmount]  = useState(String(goal?.target_amount ?? ''));
+  const [accountId,     setAccountId]     = useState(String(goal?.account_id ?? ''));
+  const [currentAmount, setCurrentAmount] = useState(String(goal?.current_amount ?? '0'));
+  const [targetDate,    setTargetDate]    = useState(goal?.target_date ?? '');
+  const [saving,        setSaving]        = useState(false);
+
+  const selectedAccount = accounts.find(a => String(a.id) === accountId);
+  const derivedCurrency = selectedAccount?.currency ?? defaultCurrency ?? 'EGP';
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -36,7 +37,7 @@ function GoalFormModal({ goal, accounts, defaultCurrency, onSave, onClose }) {
       await onSave({
         name: name.trim(), icon,
         target_amount: parseFloat(targetAmount),
-        target_currency: targetCurrency,
+        target_currency: derivedCurrency,
         account_id: accountId ? Number(accountId) : null,
         current_amount: accountId ? 0 : parseFloat(currentAmount || '0'),
         target_date: targetDate || null,
@@ -68,17 +69,14 @@ function GoalFormModal({ goal, accounts, defaultCurrency, onSave, onClose }) {
           <input className="input" value={name} onChange={e => setName(e.target.value)}
             placeholder="e.g. Emergency Fund, New Car" required autoFocus />
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="label">Target Amount *</label>
-            <input type="number" step="0.01" min="0.01" className="input" value={targetAmount}
+        <div>
+          <label className="label">Target Amount *</label>
+          <div className="relative">
+            <input type="number" step="0.01" min="0.01" className="input pr-16" value={targetAmount}
               onChange={e => setTargetAmount(e.target.value)} required />
-          </div>
-          <div>
-            <label className="label">Currency</label>
-            <select className="input" value={targetCurrency} onChange={e => setTargetCurrency(e.target.value)}>
-              {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-gray-400 dark:text-slate-500 pointer-events-none">
+              {derivedCurrency}
+            </span>
           </div>
         </div>
         <div>
