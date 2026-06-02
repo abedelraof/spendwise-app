@@ -1,31 +1,29 @@
 const express = require('express');
-const router = express.Router();
-const auth = require('../middleware/auth');
-const db = require('../db/database');
+const router  = express.Router();
+const auth    = require('../middleware/auth');
+const { pool } = require('../db/database');
 
-// Helper: date N days ago
+// Helper: ISO date N days from today (negative = past, positive = future)
 function daysAgo(n) {
   const d = new Date();
   d.setDate(d.getDate() - n);
   return d.toISOString().split('T')[0];
 }
 
-// Helper: random int between min and max
-function rand(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
 // POST /api/seed
-router.post('/', auth, (req, res) => {
+router.post('/', auth, async (req, res) => {
   const userId = req.user.userId;
+  const client = await pool.connect();
 
-  // Check if user already has data
-  const existingExpenses = db.prepare('SELECT COUNT(*) as cnt FROM expenses WHERE user_id = ?').get(userId);
-  if (existingExpenses.cnt > 0) {
-    return res.json({ alreadySeeded: true, message: 'You already have data. Clear it first from the Danger Zone.' });
-  }
+  try {
+    // Check if user already has data
+    const existing = await client.query('SELECT COUNT(*)::int AS cnt FROM expenses WHERE user_id = $1', [userId]);
+    if (existing.rows[0].cnt > 0) {
+      client.release();
+      return res.json({ alreadySeeded: true, message: 'You already have data. Clear it first from the Danger Zone.' });
+    }
 
-  const seedAll = db.transaction(() => {
+    await client.query('BEGIN');
 
     // ─── 1. CATEGORIES ────────────────────────────────────────────────────────
     const categoryDefs = [
@@ -50,36 +48,42 @@ router.post('/', auth, (req, res) => {
       'Utilities':     ['Electricity', 'Internet'],
     };
 
-    const insertCat = db.prepare(
-      'INSERT OR IGNORE INTO categories (user_id, name, icon, color) VALUES (?, ?, ?, ?)'
-    );
-    const getCat = db.prepare('SELECT id FROM categories WHERE user_id = ? AND name = ?');
-    const insertSub = db.prepare(
-      'INSERT OR IGNORE INTO subcategories (category_id, user_id, name) VALUES (?, ?, ?)'
-    );
-    const getSub = db.prepare('SELECT id FROM subcategories WHERE category_id = ? AND name = ?');
-
-    const categoryIds = {};
+    const categoryIds    = {};
     const subcategoryIds = {};
 
     for (const cat of categoryDefs) {
-      insertCat.run(userId, cat.name, cat.icon, cat.color);
-      const row = getCat.get(userId, cat.name);
-      categoryIds[cat.name] = row.id;
+      const r = await client.query(
+        `INSERT INTO categories (user_id, name, icon, color)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (user_id, name) DO UPDATE SET icon = EXCLUDED.icon, color = EXCLUDED.color
+         RETURNING id`,
+        [userId, cat.name, cat.icon, cat.color]
+      );
+      categoryIds[cat.name] = r.rows[0].id;
       subcategoryIds[cat.name] = {};
+
       for (const sub of subcategoryDefs[cat.name]) {
-        insertSub.run(row.id, userId, sub);
-        const subRow = getSub.get(row.id, sub);
-        subcategoryIds[cat.name][sub] = subRow.id;
+        const sr = await client.query(
+          `INSERT INTO subcategories (category_id, user_id, name)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (category_id, name) DO NOTHING
+           RETURNING id`,
+          [categoryIds[cat.name], userId, sub]
+        );
+        // If ON CONFLICT DO NOTHING, fetch existing
+        if (sr.rows.length > 0) {
+          subcategoryIds[cat.name][sub] = sr.rows[0].id;
+        } else {
+          const existing = await client.query(
+            'SELECT id FROM subcategories WHERE category_id = $1 AND name = $2',
+            [categoryIds[cat.name], sub]
+          );
+          subcategoryIds[cat.name][sub] = existing.rows[0].id;
+        }
       }
     }
 
     // ─── 2. ACCOUNTS ──────────────────────────────────────────────────────────
-    const insertAccount = db.prepare(
-      `INSERT INTO accounts (user_id, name, currency, icon, type) VALUES (?, ?, ?, ?, ?)`
-    );
-    const getAccount = db.prepare('SELECT id FROM accounts WHERE user_id = ? AND name = ?');
-
     const accountDefs = [
       { name: 'CIB Savings', currency: 'EGP', icon: '🏦', type: 'monetary' },
       { name: 'Wallet',      currency: 'EGP', icon: '👛', type: 'monetary' },
@@ -89,139 +93,166 @@ router.post('/', auth, (req, res) => {
 
     const accountIds = {};
     for (const acc of accountDefs) {
-      insertAccount.run(userId, acc.name, acc.currency, acc.icon, acc.type);
-      accountIds[acc.name] = getAccount.get(userId, acc.name).id;
+      const r = await client.query(
+        `INSERT INTO accounts (user_id, name, currency, icon, type)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        [userId, acc.name, acc.currency, acc.icon, acc.type]
+      );
+      accountIds[acc.name] = r.rows[0].id;
     }
 
     // ─── 3. ACCOUNT BALANCES ──────────────────────────────────────────────────
-    const insertBalance = db.prepare(
-      `INSERT INTO account_balances (account_id, user_id, balance, quantity, price_per_unit, exchange_rate, recorded_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    );
-
-    // CIB Savings: two snapshots
-    insertBalance.run(accountIds['CIB Savings'], userId, 38000, null, null, 1.0, daysAgo(60));
-    insertBalance.run(accountIds['CIB Savings'], userId, 45000, null, null, 1.0, daysAgo(5));
-    // Wallet
-    insertBalance.run(accountIds['Wallet'], userId, 2000, null, null, 1.0, daysAgo(30));
-    insertBalance.run(accountIds['Wallet'], userId, 1200, null, null, 1.0, daysAgo(2));
-    // USD Account
-    insertBalance.run(accountIds['USD Account'], userId, 500 * 50, null, null, 50.0, daysAgo(45));
-    insertBalance.run(accountIds['USD Account'], userId, 500 * 50.5, null, null, 50.5, daysAgo(3));
-    // Gold (commodity: 10g @ 3800 EGP/g)
-    insertBalance.run(accountIds['Gold'], userId, 10 * 3600, 10, 3600, 1.0, daysAgo(90));
-    insertBalance.run(accountIds['Gold'], userId, 10 * 3800, 10, 3800, 1.0, daysAgo(10));
-
-    // ─── 4. EXPENSES ──────────────────────────────────────────────────────────
-    const insertExpense = db.prepare(
-      `INSERT INTO expenses (user_id, amount, currency, exchange_rate, date, category_id, subcategory_id, description)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    );
-
-    const expenseDefs = [
-      // Food - Restaurants
-      { cat: 'Food', sub: 'Restaurants', amounts: [120, 85, 200, 95, 145, 175, 65, 110], daysBack: [2, 5, 9, 14, 18, 23, 28, 35], descs: ['Lunch at Cairo Kitchen', 'Dinner with family', 'Brunch at The Nile', 'Quick lunch', 'Dinner out', 'Weekend brunch', 'Coffee and snacks', 'Team lunch'] },
-      // Food - Groceries
-      { cat: 'Food', sub: 'Groceries', amounts: [350, 280, 420, 310], daysBack: [3, 17, 33, 55], descs: ['Weekly groceries', 'Supermarket run', 'Monthly groceries', 'Vegetables and fruits'] },
-      // Transport - Fuel
-      { cat: 'Transport', sub: 'Fuel', amounts: [250, 230, 260], daysBack: [7, 30, 60], descs: ['Fuel refill', 'Gas station', 'Fuel'] },
-      // Transport - Uber
-      { cat: 'Transport', sub: 'Uber', amounts: [45, 60, 35, 80, 55], daysBack: [1, 6, 11, 20, 40], descs: ['Uber to office', 'Uber home', 'Uber ride', 'Airport trip', 'Uber to mall'] },
-      // Housing - Rent
-      { cat: 'Housing', sub: 'Rent', amounts: [8000, 8000], daysBack: [15, 45], descs: ['Monthly rent', 'Monthly rent'] },
-      // Housing - Maintenance
-      { cat: 'Housing', sub: 'Maintenance', amounts: [500, 1200], daysBack: [25, 70], descs: ['Plumber repair', 'AC maintenance'] },
-      // Health - Pharmacy
-      { cat: 'Health', sub: 'Pharmacy', amounts: [85, 120, 200], daysBack: [4, 22, 50], descs: ['Vitamins', 'Medicine', 'Pharmacy'] },
-      // Health - Gym
-      { cat: 'Health', sub: 'Gym', amounts: [600, 600], daysBack: [30, 60], descs: ['Gym membership', 'Gym membership'] },
-      // Entertainment - Streaming
-      { cat: 'Entertainment', sub: 'Streaming', amounts: [149, 149, 99], daysBack: [10, 40, 70], descs: ['Netflix subscription', 'Netflix subscription', 'Spotify Premium'] },
-      // Entertainment - Cinema
-      { cat: 'Entertainment', sub: 'Cinema', amounts: [120, 180], daysBack: [12, 45], descs: ['Cinema tickets', 'Movie night'] },
-      // Shopping - Clothes
-      { cat: 'Shopping', sub: 'Clothes', amounts: [850, 1200], daysBack: [20, 65], descs: ['Summer clothes', 'Shoes and jeans'] },
-      // Shopping - Electronics
-      { cat: 'Shopping', sub: 'Electronics', amounts: [1500], daysBack: [80], descs: ['Wireless earbuds'] },
-      // Education - Courses
-      { cat: 'Education', sub: 'Courses', amounts: [800, 450], daysBack: [35, 75], descs: ['Udemy Flutter course', 'Arabic design course'] },
-      // Utilities - Electricity
-      { cat: 'Utilities', sub: 'Electricity', amounts: [320, 290, 350], daysBack: [20, 50, 80], descs: ['Electricity bill', 'Electricity bill', 'Electricity bill'] },
-      // Utilities - Internet
-      { cat: 'Utilities', sub: 'Internet', amounts: [399, 399], daysBack: [15, 45], descs: ['Internet bill', 'Internet bill'] },
+    const balances = [
+      [accountIds['CIB Savings'], userId, 38000, null,  null,  1.0,  daysAgo(60)],
+      [accountIds['CIB Savings'], userId, 45000, null,  null,  1.0,  daysAgo(5)],
+      [accountIds['Wallet'],      userId, 2000,  null,  null,  1.0,  daysAgo(30)],
+      [accountIds['Wallet'],      userId, 1200,  null,  null,  1.0,  daysAgo(2)],
+      [accountIds['USD Account'], userId, 25000, null,  null,  50.0, daysAgo(45)],
+      [accountIds['USD Account'], userId, 25250, null,  null,  50.5, daysAgo(3)],
+      [accountIds['Gold'],        userId, 36000, 10,    3600,  1.0,  daysAgo(90)],
+      [accountIds['Gold'],        userId, 38000, 10,    3800,  1.0,  daysAgo(10)],
     ];
 
+    for (const [aid, uid, bal, qty, ppu, rate, date] of balances) {
+      await client.query(
+        `INSERT INTO account_balances (account_id, user_id, balance, quantity, price_per_unit, exchange_rate, recorded_date)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [aid, uid, bal, qty, ppu, rate, date]
+      );
+    }
+
+    // ─── 4. EXPENSES ──────────────────────────────────────────────────────────
+    const expenseDefs = [
+      { cat: 'Food', sub: 'Restaurants',
+        rows: [[120,'Lunch at Cairo Kitchen',2],[85,'Dinner with family',5],[200,'Brunch at The Nile',9],[95,'Quick lunch',14],[145,'Dinner out',18],[175,'Weekend brunch',23],[65,'Coffee and snacks',28],[110,'Team lunch',35]] },
+      { cat: 'Food', sub: 'Groceries',
+        rows: [[350,'Weekly groceries',3],[280,'Supermarket run',17],[420,'Monthly groceries',33],[310,'Vegetables and fruits',55]] },
+      { cat: 'Transport', sub: 'Fuel',
+        rows: [[250,'Fuel refill',7],[230,'Gas station',30],[260,'Fuel',60]] },
+      { cat: 'Transport', sub: 'Uber',
+        rows: [[45,'Uber to office',1],[60,'Uber home',6],[35,'Uber ride',11],[80,'Airport trip',20],[55,'Uber to mall',40]] },
+      { cat: 'Housing', sub: 'Rent',
+        rows: [[8000,'Monthly rent',15],[8000,'Monthly rent',45],[8000,'Monthly rent',75]] },
+      { cat: 'Housing', sub: 'Maintenance',
+        rows: [[500,'Plumber repair',25],[1200,'AC maintenance',70]] },
+      { cat: 'Health', sub: 'Pharmacy',
+        rows: [[85,'Vitamins',4],[120,'Medicine',22],[200,'Pharmacy',50]] },
+      { cat: 'Health', sub: 'Gym',
+        rows: [[600,'Gym membership',30],[600,'Gym membership',60]] },
+      { cat: 'Entertainment', sub: 'Streaming',
+        rows: [[149,'Netflix subscription',10],[149,'Netflix subscription',40],[99,'Spotify Premium',70]] },
+      { cat: 'Entertainment', sub: 'Cinema',
+        rows: [[120,'Cinema tickets',12],[180,'Movie night',45]] },
+      { cat: 'Shopping', sub: 'Clothes',
+        rows: [[850,'Summer clothes',20],[1200,'Shoes and jeans',65]] },
+      { cat: 'Shopping', sub: 'Electronics',
+        rows: [[1500,'Wireless earbuds',80]] },
+      { cat: 'Education', sub: 'Courses',
+        rows: [[800,'Udemy Flutter course',35],[450,'Arabic design course',75]] },
+      { cat: 'Utilities', sub: 'Electricity',
+        rows: [[320,'Electricity bill',20],[290,'Electricity bill',50],[350,'Electricity bill',80]] },
+      { cat: 'Utilities', sub: 'Internet',
+        rows: [[399,'Internet bill',15],[399,'Internet bill',45],[399,'Internet bill',75]] },
+    ];
+
+    let expenseCount = 0;
     for (const group of expenseDefs) {
       const catId = categoryIds[group.cat];
       const subId = subcategoryIds[group.cat][group.sub];
-      for (let i = 0; i < group.amounts.length; i++) {
-        insertExpense.run(userId, group.amounts[i], 'EGP', 1.0, daysAgo(group.daysBack[i]), catId, subId, group.descs[i]);
+      for (const [amount, description, daysBack] of group.rows) {
+        await client.query(
+          `INSERT INTO expenses (user_id, amount, currency, exchange_rate, date, category_id, subcategory_id, description)
+           VALUES ($1,$2,'EGP',1.0,$3,$4,$5,$6)`,
+          [userId, amount, daysAgo(daysBack), catId, subId, description]
+        );
+        expenseCount++;
       }
     }
 
     // ─── 5. INCOME ────────────────────────────────────────────────────────────
-    const insertIncome = db.prepare(
-      `INSERT INTO incomes (user_id, amount, currency, exchange_rate, date, source, description)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    );
+    const incomes = [
+      [15000, 'EGP', 1.0, daysAgo(5),  'Salary',     'Monthly salary - Month 1'],
+      [15000, 'EGP', 1.0, daysAgo(35), 'Salary',     'Monthly salary - Month 2'],
+      [15000, 'EGP', 1.0, daysAgo(65), 'Salary',     'Monthly salary - Month 3'],
+      [3500,  'EGP', 1.0, daysAgo(20), 'Freelance',  'Logo design project'],
+      [5000,  'EGP', 1.0, daysAgo(50), 'Business',   'Consulting payment'],
+      [800,   'EGP', 1.0, daysAgo(40), 'Investment', 'Dividends'],
+      [500,   'EGP', 1.0, daysAgo(70), 'Gift',       'Birthday gift'],
+    ];
 
-    insertIncome.run(userId, 15000, 'EGP', 1.0, daysAgo(5),  'Salary',     'Monthly salary - May');
-    insertIncome.run(userId, 15000, 'EGP', 1.0, daysAgo(35), 'Salary',     'Monthly salary - April');
-    insertIncome.run(userId, 15000, 'EGP', 1.0, daysAgo(65), 'Salary',     'Monthly salary - March');
-    insertIncome.run(userId, 3500,  'EGP', 1.0, daysAgo(20), 'Freelance',  'Logo design project');
-    insertIncome.run(userId, 5000,  'EGP', 1.0, daysAgo(50), 'Business',   'Consulting payment');
-    insertIncome.run(userId, 800,   'EGP', 1.0, daysAgo(40), 'Investment', 'Dividends');
-    insertIncome.run(userId, 500,   'EGP', 1.0, daysAgo(70), 'Gift',       'Birthday gift');
+    for (const [amount, currency, rate, date, source, description] of incomes) {
+      await client.query(
+        `INSERT INTO incomes (user_id, amount, currency, exchange_rate, date, source, description)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [userId, amount, currency, rate, date, source, description]
+      );
+    }
 
     // ─── 6. BUDGETS ───────────────────────────────────────────────────────────
-    const insertBudget = db.prepare(
-      `INSERT OR IGNORE INTO budgets (user_id, category_id, amount, period) VALUES (?, ?, ?, ?)`
-    );
+    const budgets = [
+      [categoryIds['Food'],          2500],
+      [categoryIds['Transport'],     1500],
+      [categoryIds['Entertainment'],  500],
+      [categoryIds['Shopping'],      2000],
+      [categoryIds['Utilities'],     1000],
+    ];
 
-    insertBudget.run(userId, categoryIds['Food'],          2500,  'monthly');
-    insertBudget.run(userId, categoryIds['Transport'],     1500,  'monthly');
-    insertBudget.run(userId, categoryIds['Entertainment'], 500,   'monthly');
-    insertBudget.run(userId, categoryIds['Shopping'],      2000,  'monthly');
-    insertBudget.run(userId, categoryIds['Utilities'],     1000,  'monthly');
+    for (const [catId, amount] of budgets) {
+      await client.query(
+        `INSERT INTO budgets (user_id, category_id, amount, period)
+         VALUES ($1,$2,$3,'monthly') ON CONFLICT (user_id, category_id, period) DO NOTHING`,
+        [userId, catId, amount]
+      );
+    }
 
     // ─── 7. RECURRING EXPENSES ────────────────────────────────────────────────
-    const insertRecurring = db.prepare(
-      `INSERT INTO recurring_expenses (user_id, amount, currency, exchange_rate, category_id, subcategory_id, description, interval_type, next_due_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    );
+    const recurring = [
+      [149, categoryIds['Entertainment'], subcategoryIds['Entertainment']['Streaming'], 'Netflix subscription', 'monthly', daysAgo(-10)],
+      [600, categoryIds['Health'],        subcategoryIds['Health']['Gym'],              'Gym membership',       'monthly', daysAgo(-5)],
+      [399, categoryIds['Utilities'],     subcategoryIds['Utilities']['Internet'],      'Internet bill',        'monthly', daysAgo(-8)],
+    ];
 
-    insertRecurring.run(userId, 149, 'EGP', 1.0, categoryIds['Entertainment'], subcategoryIds['Entertainment']['Streaming'], 'Netflix subscription', 'monthly', daysAgo(-10));
-    insertRecurring.run(userId, 600, 'EGP', 1.0, categoryIds['Health'],        subcategoryIds['Health']['Gym'],              'Gym membership',       'monthly', daysAgo(-5));
-    insertRecurring.run(userId, 399, 'EGP', 1.0, categoryIds['Utilities'],     subcategoryIds['Utilities']['Internet'],      'Internet bill',        'monthly', daysAgo(-8));
+    for (const [amount, catId, subId, description, interval, nextDate] of recurring) {
+      await client.query(
+        `INSERT INTO recurring_expenses (user_id, amount, currency, exchange_rate, category_id, subcategory_id, description, interval_type, next_due_date)
+         VALUES ($1,$2,'EGP',1.0,$3,$4,$5,$6,$7)`,
+        [userId, amount, catId, subId, description, interval, nextDate]
+      );
+    }
 
     // ─── 8. SAVINGS GOALS ─────────────────────────────────────────────────────
-    const insertGoal = db.prepare(
+    await client.query(
       `INSERT INTO savings_goals (user_id, account_id, name, icon, target_amount, target_currency, current_amount, target_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES ($1, NULL, 'New Laptop', '💻', 25000, 'EGP', 12000, $2)`,
+      [userId, daysAgo(-120)]
+    );
+    await client.query(
+      `INSERT INTO savings_goals (user_id, account_id, name, icon, target_amount, target_currency, current_amount, target_date)
+       VALUES ($1, $2, 'Emergency Fund', '🛡️', 50000, 'EGP', 0, $3)`,
+      [userId, accountIds['CIB Savings'], daysAgo(-180)]
     );
 
-    // Manual goal
-    insertGoal.run(userId, null, 'New Laptop', '💻', 25000, 'EGP', 12000, daysAgo(-120));
-    // Linked to CIB Savings account
-    insertGoal.run(userId, accountIds['CIB Savings'], 'Emergency Fund', '🛡️', 50000, 'EGP', 0, daysAgo(-180));
+    await client.query('COMMIT');
 
-    return {
-      categories: categoryDefs.length,
-      expenses: expenseDefs.reduce((sum, g) => sum + g.amounts.length, 0),
-      income: 7,
-      accounts: accountDefs.length,
-      budgets: 5,
-      recurring: 3,
-      goals: 2,
-    };
-  });
+    res.json({
+      success: true,
+      summary: {
+        categories: categoryDefs.length,
+        expenses: expenseCount,
+        income: incomes.length,
+        accounts: accountDefs.length,
+        budgets: budgets.length,
+        recurring: recurring.length,
+        goals: 2,
+      },
+    });
 
-  try {
-    const summary = seedAll();
-    res.json({ success: true, summary });
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error('Seed error:', err);
     res.status(500).json({ error: 'Failed to seed data: ' + err.message });
+  } finally {
+    client.release();
   }
 });
 
