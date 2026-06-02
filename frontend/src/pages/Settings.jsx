@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Bot, Globe, FolderOpen, Upload, CheckCircle, Trash2, ShieldAlert } from 'lucide-react';
+import { Bot, Globe, FolderOpen, Upload, CheckCircle, Trash2, ShieldAlert, Sparkles } from 'lucide-react';
 import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import { getSettings, updateSettings } from '../api/settingsApi';
+import { seedDemoData } from '../api/seedApi';
 import { getCategories } from '../api/categoriesApi';
 import { showToast } from '../components/common/Toast';
 import Spinner from '../components/common/Spinner';
@@ -115,6 +116,8 @@ export default function Settings() {
   const [loading, setLoading]     = useState(true);
   const [saving, setSaving]       = useState(null);
   const [showClearModal, setShowClearModal] = useState(false);
+  const [showSeedModal, setShowSeedModal]   = useState(false);
+  const [seeding, setSeeding]               = useState(false);
   async function fetchAll() {
     try {
       const [s, c] = await Promise.all([getSettings(api), getCategories(api)]);
@@ -156,6 +159,21 @@ export default function Settings() {
   function handleClearClose(wasCleared) {
     setShowClearModal(false);
     if (wasCleared) fetchAll();
+  }
+
+  async function handleSeed() {
+    setSeeding(true);
+    try {
+      const result = await seedDemoData(api);
+      if (result.alreadySeeded) {
+        showToast('You already have data. Clear it first from the Danger Zone.', 'warning');
+      } else {
+        showToast('Demo data added! Explore your app 🎉');
+        setTimeout(() => window.location.reload(), 800);
+      }
+    } catch { showToast('Failed to seed data', 'error'); }
+    setSeeding(false);
+    setShowSeedModal(false);
   }
 
   if (loading) return <div className="flex justify-center py-12"><Spinner size="lg" /></div>;
@@ -229,6 +247,21 @@ export default function Settings() {
         <CsvImport api={api} />
       </SectionCard>
 
+      {/* Demo Data */}
+      <SectionCard icon={Sparkles} title="Demo Data">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <p className="text-sm font-medium text-gray-900 dark:text-white">Fill with sample data</p>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">
+              Populate your account with realistic expenses, income, accounts, budgets, and goals to explore all features.
+            </p>
+          </div>
+          <button onClick={() => setShowSeedModal(true)} className="btn-primary shrink-0">
+            <Sparkles size={13} /> Fill Demo Data
+          </button>
+        </div>
+      </SectionCard>
+
       {/* Danger Zone */}
       <div className="card p-6 border-red-200 dark:border-red-900/50">
         <div className="flex items-center gap-2.5 pb-4 border-b border-red-100 dark:border-red-900/40 mb-5">
@@ -253,6 +286,25 @@ export default function Settings() {
 
       {showClearModal && (
         <ClearDataModal hasPin={settings.hasPin} api={api} onClose={handleClearClose} />
+      )}
+
+      {showSeedModal && (
+        <Modal open onClose={() => setShowSeedModal(false)} title="Fill Demo Data" size="sm">
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 p-3 bg-brand-50 dark:bg-brand-900/20 rounded-xl border border-brand-200 dark:border-brand-800/40">
+              <Sparkles size={16} className="text-brand-500 mt-0.5 shrink-0" />
+              <p className="text-xs text-brand-700 dark:text-brand-300 leading-relaxed">
+                This will add ~60 expenses, 7 income entries, 4 accounts, 5 budgets, 3 recurring items, and 2 savings goals spread across the last 3 months.
+              </p>
+            </div>
+            <div className="flex gap-3 pt-1">
+              <button onClick={() => setShowSeedModal(false)} className="btn-secondary flex-1">Cancel</button>
+              <button onClick={handleSeed} disabled={seeding} className="btn-primary flex-1">
+                {seeding ? <><Spinner size="sm" /> Seeding…</> : <><Sparkles size={13} /> Fill Demo Data</>}
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

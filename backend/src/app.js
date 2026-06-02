@@ -24,6 +24,7 @@ app.use('/api/account-groups', require('./routes/accountGroups'));
 app.use('/api/rates',      require('./routes/rates'));
 app.use('/api/goals',      require('./routes/goals'));
 app.use('/api/income',     require('./routes/income'));
+app.use('/api/seed',       require('./routes/seed'));
 
 app.use(errorHandler);
 
