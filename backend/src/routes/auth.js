@@ -21,7 +21,7 @@ router.post('/signup', async (req, res, next) => {
 
     const user = await userModel.findById(userId);
     const token = makeToken(user);
-    res.status(201).json({ token, user: { id: user.id, email: user.email, currency: user.currency, theme: user.theme } });
+    res.status(201).json({ token, user: { id: user.id, email: user.email, currency: user.currency, theme: user.theme, is_admin: user.is_admin ?? 0 } });
   } catch (err) { next(err); }
 });
 
@@ -37,7 +37,7 @@ router.post('/login', async (req, res, next) => {
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
     const token = makeToken(user);
-    res.json({ token, user: { id: user.id, email: user.email, currency: user.currency, theme: user.theme } });
+    res.json({ token, user: { id: user.id, email: user.email, currency: user.currency, theme: user.theme, is_admin: user.is_admin ?? 0 } });
   } catch (err) { next(err); }
 });
 
