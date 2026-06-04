@@ -15,6 +15,7 @@ router.get('/', auth, async (req, res, next) => {
       theme:             user.theme,
       hasApiKey:         !!user.claude_api_key,
       hasPin:            !!user.pin_hash,
+      is_admin:          user.is_admin ?? 0,
     });
   } catch (err) { next(err); }
 });

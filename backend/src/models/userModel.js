@@ -5,7 +5,7 @@ const findByEmail = (email) =>
 
 const findById = (id) =>
   queryOne(
-    'SELECT id, email, currency, accounts_currency, theme, claude_api_key, pin_hash, created_at FROM users WHERE id = $1',
+    'SELECT id, email, currency, accounts_currency, theme, claude_api_key, pin_hash, is_admin, created_at FROM users WHERE id = $1',
     [id]
   );
 

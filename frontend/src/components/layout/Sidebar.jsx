@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, ArrowLeftRight, BarChart2,
-  Settings, LogOut, Wallet, PiggyBank, TrendingUp, Target,
+  Settings, LogOut, Wallet, PiggyBank, TrendingUp, Target, ShieldCheck,
 } from 'lucide-react';
 import useAuth from '../../hooks/useAuth';
 
@@ -60,6 +60,34 @@ export default function Sidebar({ onClose }) {
           </NavLink>
         ))}
       </nav>
+
+      {/* Admin link */}
+      {user?.is_admin === 1 && (
+        <div className="px-3 pb-1">
+          <NavLink
+            to="/app/admin"
+            onClick={onClose}
+            className={({ isActive }) =>
+              `group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
+                isActive
+                  ? 'bg-white/15 text-white'
+                  : 'text-white/60 hover:bg-white/10 hover:text-white'
+              }`
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <span className={`p-1.5 rounded-lg transition-colors ${
+                  isActive ? 'bg-white/20 text-white' : 'text-white/50 group-hover:text-white'
+                }`}>
+                  <ShieldCheck size={15} strokeWidth={isActive ? 2.2 : 1.8} />
+                </span>
+                Admin
+              </>
+            )}
+          </NavLink>
+        </div>
+      )}
 
       {/* User + logout */}
       <div className="px-3 pb-4 pt-3 border-t border-white/10 space-y-1">

@@ -14,6 +14,9 @@ import Accounts from './pages/Accounts';
 import Income from './pages/Income';
 import RecordBalances from './pages/RecordBalances';
 import Planning from './pages/Planning';
+import Admin from './pages/Admin';
+import AdminUsers from './pages/AdminUsers';
+import AdminUserDetail from './pages/AdminUserDetail';
 
 export default function App() {
   return (
@@ -33,6 +36,9 @@ export default function App() {
           <Route path="income" element={<Income />} />
           <Route path="planning" element={<Planning />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="admin" element={<Admin />} />
+          <Route path="admin/users" element={<AdminUsers />} />
+          <Route path="admin/users/:id" element={<AdminUserDetail />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

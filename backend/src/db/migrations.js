@@ -166,6 +166,7 @@ async function runMigrations() {
     await client.query(`
       ALTER TABLE accounts ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE accounts ADD COLUMN IF NOT EXISTS group_id   INTEGER REFERENCES account_groups(id) ON DELETE SET NULL;
+      ALTER TABLE users    ADD COLUMN IF NOT EXISTS is_admin   INTEGER NOT NULL DEFAULT 0;
     `);
 
     console.log('[migrations] Schema up to date');
