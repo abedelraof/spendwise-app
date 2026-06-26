@@ -2,7 +2,6 @@ const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const auth = require('../middleware/auth');
 const userModel = require('../models/userModel');
-const { encrypt } = require('../services/cryptoService');
 const { execute, pool } = require('../db/database');
 
 router.get('/', auth, async (req, res, next) => {
@@ -13,7 +12,6 @@ router.get('/', auth, async (req, res, next) => {
       currency:          user.currency,
       accounts_currency: user.accounts_currency ?? null,
       theme:             user.theme,
-      hasApiKey:         !!user.claude_api_key,
       hasPin:            !!user.pin_hash,
       is_admin:          user.is_admin ?? 0,
     });
@@ -22,11 +20,10 @@ router.get('/', auth, async (req, res, next) => {
 
 router.put('/', auth, async (req, res, next) => {
   try {
-    const { currency, claudeApiKey, theme, accounts_currency } = req.body;
+    const { currency, theme, accounts_currency } = req.body;
     const updates = {};
     if (currency)                        updates.currency         = currency;
     if (theme)                           updates.theme            = theme;
-    if (claudeApiKey)                    updates.claudeApiKey     = encrypt(claudeApiKey);
     if (accounts_currency !== undefined) updates.accountsCurrency = accounts_currency || null;
     await userModel.updateSettings(req.user.userId, updates);
 
@@ -36,7 +33,6 @@ router.put('/', auth, async (req, res, next) => {
       currency:          user.currency,
       accounts_currency: user.accounts_currency ?? null,
       theme:             user.theme,
-      hasApiKey:         !!user.claude_api_key,
     });
   } catch (err) { next(err); }
 });

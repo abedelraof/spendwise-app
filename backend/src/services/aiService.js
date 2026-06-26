@@ -132,7 +132,7 @@ function extractJsonObj(text) {
 }
 
 async function getClient(encryptedKey) {
-  const apiKey = decrypt(encryptedKey);
+  const apiKey = encryptedKey ? decrypt(encryptedKey) : process.env.ANTHROPIC_API_KEY;
   return new Anthropic({ apiKey });
 }
 

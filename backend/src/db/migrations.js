@@ -167,6 +167,22 @@ async function runMigrations() {
       ALTER TABLE accounts ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE accounts ADD COLUMN IF NOT EXISTS group_id   INTEGER REFERENCES account_groups(id) ON DELETE SET NULL;
       ALTER TABLE users    ADD COLUMN IF NOT EXISTS is_admin   INTEGER NOT NULL DEFAULT 0;
+
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS plan                TEXT        NOT NULL DEFAULT 'free';
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_used_this_month  INTEGER     NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS ai_quota_reset_date TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS play_purchase_token TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_expiry TIMESTAMPTZ;
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ai_parse_cache (
+        id           SERIAL PRIMARY KEY,
+        cache_key    TEXT        NOT NULL UNIQUE,
+        response_json TEXT       NOT NULL,
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_ai_cache_key ON ai_parse_cache(cache_key);
     `);
 
     console.log('[migrations] Schema up to date');
