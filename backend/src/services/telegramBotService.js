@@ -14,9 +14,10 @@ function fmtAmount(n) {
 }
 
 function formatExpenseList(expenses, currency) {
-  const lines = expenses.map((e, i) =>
-    `${i + 1}. ${e.description || e.category} — ${fmtAmount(e.amount)} ${e.currency || currency} (${e.category}${e.subcategory ? ' / ' + e.subcategory : ''})`
-  );
+  const lines = expenses.map((e, i) => {
+    const category = e.subcategory ? `${e.category} / ${e.subcategory}` : e.category;
+    return `${i + 1}. ${e.description || e.category} — ${fmtAmount(e.amount)} ${e.currency || currency}\n   📅 ${e.date}   🏷 ${category}`;
+  });
   const total = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
   return `Here's what I parsed:\n\n${lines.join('\n')}\n\nTotal: ${fmtAmount(total)} ${currency}\n\nConfirm, or send another message to correct anything.`;
 }
