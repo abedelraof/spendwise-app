@@ -2,8 +2,20 @@ const { Telegraf, Markup } = require('telegraf');
 const { query, queryOne, execute } = require('../db/database');
 const userModel = require('../models/userModel');
 const categoryModel = require('../models/categoryModel');
-const { parseExpenses, reviseExpenses } = require('./aiService');
-const { createExpenses } = require('./expenseService');
+const expenseModel = require('../models/expenseModel');
+const { parseExpenses, reviseExpenses, answerQuestion } = require('./aiService');
+const { createExpenses, getDashboardStats, getFinanceContext } = require('./expenseService');
+
+const NOT_LINKED_MSG = 'Your Telegram isn\'t connected to an ExpenseBeam account yet. Open the app → Settings → Connect Telegram to link it.';
+
+const HELP_TEXT = `Here's what I can do:
+
+• Just send a message like "coffee 45, lunch 120" and I'll parse it into expenses for you to confirm.
+• /stats — this month's spending summary
+• /budgets — budget status for this month
+• /recent — your last few expenses
+• /ask <question> — ask anything about your finances, e.g. /ask am I on track with my budgets?
+• /help — show this message`;
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
@@ -20,6 +32,37 @@ function formatExpenseList(expenses, currency) {
   });
   const total = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
   return `Here's what I parsed:\n\n${lines.join('\n')}\n\nTotal: ${fmtAmount(total)} ${currency}\n\nConfirm, or send another message to correct anything.`;
+}
+
+function formatStats(stats, currency) {
+  const cashFlow = stats.incomeThisMonth - stats.totalThisMonth;
+  return `📊 This Month (${stats.month})
+
+Spent: ${fmtAmount(stats.totalThisMonth)} ${currency}
+Income: ${fmtAmount(stats.incomeThisMonth)} ${currency}
+Cash flow: ${cashFlow >= 0 ? '+' : ''}${fmtAmount(cashFlow)} ${currency}
+Top category: ${stats.topCategory ?? 'N/A'}
+Daily average: ${fmtAmount(stats.dailyAverage)} ${currency}
+Transactions: ${stats.transactionCount}`;
+}
+
+function formatBudgets(budgets, currency) {
+  if (!budgets.length) return 'You don\'t have any budgets set up yet — add some from Planning in the app.';
+  const lines = budgets.map(b => {
+    const pct = b.budget_limit > 0 ? Math.round((b.spent / b.budget_limit) * 100) : 0;
+    const emoji = pct >= 100 ? '🔴' : pct >= 80 ? '🟠' : '🟢';
+    return `${emoji} ${b.category}: ${fmtAmount(b.spent)} / ${fmtAmount(b.budget_limit)} ${currency} (${pct}%)`;
+  });
+  return `💰 Budgets This Month\n\n${lines.join('\n')}`;
+}
+
+function formatRecent(expenses, currency) {
+  if (!expenses.length) return 'No expenses recorded yet.';
+  const lines = expenses.map(e => {
+    const category = e.subcategory_name ? `${e.category_name} / ${e.subcategory_name}` : e.category_name;
+    return `${e.date} — ${e.description || category} — ${fmtAmount(e.amount)} ${e.currency || currency} (${category})`;
+  });
+  return `🧾 Recent Expenses\n\n${lines.join('\n')}`;
 }
 
 const confirmKeyboard = Markup.inlineKeyboard([
@@ -76,15 +119,53 @@ function createBot() {
     await ctx.reply(`✅ Linked to ${user.email}. Send me an expense any time, e.g. "coffee 45, lunch 120".`);
   });
 
+  instance.help(async (ctx) => ctx.reply(HELP_TEXT));
+
+  instance.command('stats', async (ctx) => {
+    const user = await getLinkedUser(ctx.chat.id);
+    if (!user) return ctx.reply(NOT_LINKED_MSG);
+    const stats = await getDashboardStats(user.id);
+    await ctx.reply(formatStats(stats, user.currency));
+  });
+
+  instance.command('budgets', async (ctx) => {
+    const user = await getLinkedUser(ctx.chat.id);
+    if (!user) return ctx.reply(NOT_LINKED_MSG);
+    const { budgets } = await getFinanceContext(user.id);
+    await ctx.reply(formatBudgets(budgets, user.currency));
+  });
+
+  instance.command('recent', async (ctx) => {
+    const user = await getLinkedUser(ctx.chat.id);
+    if (!user) return ctx.reply(NOT_LINKED_MSG);
+    const { expenses } = await expenseModel.findByUser(user.id, { limit: 8, sortBy: 'date', sortDir: 'DESC' });
+    await ctx.reply(formatRecent(expenses, user.currency));
+  });
+
+  instance.command('ask', async (ctx) => {
+    const user = await getLinkedUser(ctx.chat.id);
+    if (!user) return ctx.reply(NOT_LINKED_MSG);
+
+    const question = ctx.message.text.replace(/^\/ask(@\S+)?\s*/i, '').trim();
+    if (!question) return ctx.reply('Ask me something, e.g. /ask am I on track with my budgets?');
+
+    try {
+      const context = await getFinanceContext(user.id);
+      const answer = await answerQuestion(question, context, null, user.currency);
+      await ctx.reply(answer);
+    } catch (err) {
+      console.error('[telegram] /ask failed', err);
+      await ctx.reply('Sorry, something went wrong answering that. Please try again.');
+    }
+  });
+
   instance.on('text', async (ctx) => {
     const chatId = ctx.chat.id;
     const text = ctx.message.text.trim();
     if (!text) return;
 
     const user = await getLinkedUser(chatId);
-    if (!user) {
-      return ctx.reply('Your Telegram isn\'t connected to an ExpenseBeam account yet. Open the app → Settings → Connect Telegram to link it.');
-    }
+    if (!user) return ctx.reply(NOT_LINKED_MSG);
 
     const categories = await categoryModel.findByUser(user.id);
     const session = await getSession(chatId);
@@ -148,6 +229,14 @@ async function launch() {
   }
 
   try {
+    await instance.telegram.setMyCommands([
+      { command: 'stats',   description: "This month's spending summary" },
+      { command: 'budgets', description: 'Budget status for this month' },
+      { command: 'recent',  description: 'Your last few expenses' },
+      { command: 'ask',     description: 'Ask a question about your finances' },
+      { command: 'help',    description: 'Show what I can do' },
+    ]);
+
     if (process.env.TELEGRAM_MODE === 'polling') {
       await instance.launch();
       console.log('[telegram] Bot running in long-polling mode');

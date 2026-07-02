@@ -5,8 +5,7 @@ const userModel = require('../models/userModel');
 const categoryModel = require('../models/categoryModel');
 const { parseExpenses, answerQuestion } = require('../services/aiService');
 const { query, execute } = require('../db/database');
-const { getDashboardStats } = require('../services/expenseService');
-const { getMonthRange } = require('../utils/dateUtils');
+const { getFinanceContext } = require('../services/expenseService');
 
 function getResetDate() {
   const now = new Date();
@@ -88,61 +87,7 @@ router.post('/ask', auth, enforceAiQuota, async (req, res, next) => {
     const cached = await getCachedResponse(cacheKey);
     if (cached) return res.json({ ...cached, cached: true });
 
-    const now = new Date();
-    const { start: monthStart } = getMonthRange(now.getFullYear(), now.getMonth() + 1);
-
-    const [expenses, categories, incomes, budgets, goals, accounts, stats] = await Promise.all([
-      query(
-        `SELECT e.date, e.amount, e.currency, e.exchange_rate, e.description,
-                c.name AS category, s.name AS subcategory
-         FROM expenses e
-         LEFT JOIN categories c ON e.category_id = c.id
-         LEFT JOIN subcategories s ON e.subcategory_id = s.id
-         WHERE e.user_id = $1 ORDER BY e.date DESC LIMIT 50`,
-        [userId]
-      ),
-      query(
-        `SELECT c.name AS category, SUM(e.amount * e.exchange_rate)::float AS total
-         FROM expenses e
-         LEFT JOIN categories c ON e.category_id = c.id
-         WHERE e.user_id = $1 AND e.date >= $2
-         GROUP BY c.name ORDER BY total DESC`,
-        [userId, monthStart]
-      ),
-      query(
-        `SELECT date, amount, currency, exchange_rate, source, description
-         FROM incomes WHERE user_id = $1 ORDER BY date DESC LIMIT 20`,
-        [userId]
-      ),
-      query(
-        `SELECT c.name AS category, b.amount::float AS budget_limit,
-                COALESCE(SUM(e.amount * e.exchange_rate), 0)::float AS spent
-         FROM budgets b
-         LEFT JOIN categories c ON b.category_id = c.id
-         LEFT JOIN expenses e ON e.category_id = b.category_id
-           AND e.user_id = b.user_id
-           AND e.date >= $2
-         WHERE b.user_id = $1
-         GROUP BY b.id, c.name, b.amount`,
-        [userId, monthStart]
-      ),
-      query(
-        `SELECT name, target_amount::float, target_currency, current_amount::float, target_date
-         FROM savings_goals WHERE user_id = $1`,
-        [userId]
-      ),
-      query(
-        `SELECT a.name, a.type, a.currency,
-                (SELECT ab.balance FROM account_balances ab
-                 WHERE ab.account_id = a.id
-                 ORDER BY ab.recorded_date DESC LIMIT 1)::float AS latest_balance
-         FROM accounts a WHERE a.user_id = $1`,
-        [userId]
-      ),
-      getDashboardStats(userId),
-    ]);
-
-    const context = { expenses, categories, incomes, budgets, goals, accounts, stats };
+    const context = await getFinanceContext(userId);
     const answer = await answerQuestion(question.trim(), context, null, req.aiUser.currency);
     const result = { answer };
 
