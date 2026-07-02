@@ -1,8 +1,8 @@
-# SpendWise — Project Documentation
+# ExpenseBeam (formerly "SpendWise") — Project Documentation
 
 ## What Is This
 
-SpendWise is a personal finance tracker built as a full-stack web app. It tracks expenses, income, budgets, recurring bills, multi-currency bank accounts, savings goals, and produces reports. It includes a Claude AI integration for parsing natural-language expense descriptions and generating monthly financial insights.
+ExpenseBeam is a personal finance tracker with a React web app, a Flutter mobile app, and a marketing landing page, sharing one Express/PostgreSQL backend. It tracks expenses, income, budgets, recurring bills, multi-currency bank accounts, savings goals, and produces reports. It includes Claude AI integration for parsing natural-language expense descriptions, a "Finance Chat" Q&A assistant, and monthly AI-generated insights. It runs as a freemium product (Google Play billing) with an admin dashboard for operators.
 
 ---
 
@@ -10,13 +10,16 @@ SpendWise is a personal finance tracker built as a full-stack web app. It tracks
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 19 + Vite, Tailwind CSS, Recharts, Lucide icons |
-| Backend | Node.js + Express 5, SQLite via better-sqlite3 |
+| Web frontend | React 19 + Vite, Tailwind CSS, Recharts, Lucide icons |
+| Mobile app | Flutter (`expensebeam_mobile/`) — Dio, Provider, fl_chart, flutter_secure_storage |
+| Backend | Node.js + Express 5, **PostgreSQL** via `pg` (raw SQL, no ORM) |
 | Auth | JWT (jsonwebtoken) + bcryptjs password hashing |
-| AI | Anthropic Claude SDK (`@anthropic-ai/sdk`) |
-| Scheduler | node-cron (daily recurring expense processing) |
+| AI | Anthropic Claude SDK (`@anthropic-ai/sdk`), server-side API key (no per-user keys) |
+| Billing | Google Play Developer API subscription verification (freemium AI quota) |
+| Scheduler | node-cron — recurring expenses, monthly AI quota reset, subscription expiry check |
 | Exchange rates | open.er-api.com (1-hour cached proxy) |
-| Encryption | AES-256-GCM via Node crypto (for stored API keys) |
+| Encryption | AES-256-GCM via Node crypto (`cryptoService.js`, currently unused by any active per-user secret) |
+| Deployment | Docker Compose (Postgres + Node backend + Caddy-served frontend), auto-SSL |
 
 **Ports:** Backend `3001`, Frontend (Vite dev) `5173`
 
@@ -24,13 +27,22 @@ SpendWise is a personal finance tracker built as a full-stack web app. It tracks
 ```
 backend:  cd D:\FlutterApp\backend  && npm run dev   (nodemon)
 frontend: cd D:\FlutterApp\frontend && npm run dev   (vite)
+mobile:   cd D:\FlutterApp\expensebeam_mobile && flutter run
 ```
 
 **Required env vars** (`backend/.env`):
 ```
 PORT=3001
 JWT_SECRET=<32+ char secret>
+DATABASE_URL=postgresql://postgres:root@localhost:5432/spendwise   (local dev)
+ANTHROPIC_API_KEY=<server-side Claude key>
+# Optional, only needed for Google Play subscription verification:
+GOOGLE_SERVICE_ACCOUNT_JSON=<service account JSON, single line>
+GOOGLE_PLAY_PACKAGE=com.expensebeam.expensebeam_mobile
+GOOGLE_PLAY_SUBSCRIPTION_ID=expensebeam_pro_monthly
 ```
+
+Production uses Docker Compose with `DOMAIN` and `DB_PASSWORD` — see the "Deployment" section below.
 
 ---
 
@@ -41,117 +53,121 @@ D:\FlutterApp\
 ├── backend/
 │   └── src/
 │       ├── app.js              ← Express app, all route mounts
-│       ├── server.js           ← HTTP listen, migrations, cron setup
+│       ├── server.js           ← HTTP listen, migrations, cron setup (recurring, AI quota reset, sub expiry)
 │       ├── db/
-│       │   ├── database.js     ← better-sqlite3 singleton
-│       │   └── migrations.js   ← CREATE TABLE IF NOT EXISTS (runs on startup)
+│       │   ├── database.js     ← pg Pool singleton; query()/queryOne()/execute() helpers
+│       │   └── migrations.js   ← CREATE TABLE IF NOT EXISTS + additive ALTER TABLE (runs on startup)
 │       ├── middleware/
-│       │   └── auth.js         ← JWT verification → req.user.userId
+│       │   ├── auth.js         ← JWT verification → req.user.userId
+│       │   ├── adminAuth.js    ← requires users.is_admin = 1 (chained after auth)
+│       │   └── errorHandler.js
 │       ├── models/
 │       │   ├── userModel.js
 │       │   ├── categoryModel.js
 │       │   ├── subcategoryModel.js
 │       │   └── expenseModel.js
 │       ├── routes/
-│       │   ├── auth.js         ← POST /login, POST /signup
-│       │   ├── settings.js     ← GET/PUT /settings
+│       │   ├── auth.js         ← POST /login, POST /signup (response includes is_admin)
+│       │   ├── settings.js     ← GET/PUT /settings, POST /settings/clear-data ("Danger Zone")
 │       │   ├── categories.js   ← CRUD /categories + subcategories
 │       │   ├── expenses.js     ← CRUD /expenses
 │       │   ├── budgets.js      ← CRUD /budgets
 │       │   ├── recurring.js    ← CRUD /recurring
-│       │   ├── accounts.js     ← CRUD /accounts + balance snapshots
+│       │   ├── accounts.js     ← CRUD /accounts + reorder + balance snapshots
+│       │   ├── accountGroups.js← CRUD /account-groups + reorder (user-defined Accounts page groupings)
 │       │   ├── income.js       ← CRUD /income (filterable list)
 │       │   ├── goals.js        ← CRUD /goals (savings goals)
 │       │   ├── reports.js      ← GET /reports/* (trend, breakdown, topDays, export)
-│       │   ├── ai.js           ← POST /ai/parse, GET /ai/insights
+│       │   ├── ai.js           ← POST /ai/parse, POST /ai/ask (both quota-gated + cached)
 │       │   ├── insights.js     ← Monthly AI insight generation
+│       │   ├── subscription.js ← GET /subscription, POST /subscription/verify (Google Play)
+│       │   ├── admin.js        ← GET /admin/stats, /admin/users, /admin/users/:id (adminAuth-gated)
+│       │   ├── seed.js         ← POST /seed — generates demo data for a fresh account
 │       │   ├── rates.js        ← GET /rates?base=X (cached exchange rates)
 │       │   ├── search.js       ← GET /search?q=
 │       │   └── import.js       ← POST /import/csv
 │       ├── services/
-│       │   ├── aiService.js          ← Claude API calls (parse + insights)
+│       │   ├── aiService.js          ← Claude calls: parseExpenses(), answerQuestion() (Finance Chat), insights
 │       │   ├── expenseService.js     ← getDashboardStats (incomeThisMonth included)
 │       │   ├── categoryService.js    ← find-or-create category by name
 │       │   ├── budgetService.js      ← budget limit checks
 │       │   ├── recurringService.js   ← processOverdue() → inserts expenses + advances dates
-│       │   └── cryptoService.js      ← encrypt()/decrypt() AES-256-GCM
+│       │   └── cryptoService.js      ← encrypt()/decrypt() AES-256-GCM (legacy; not wired to any route now)
 │       └── utils/
 │           ├── dateUtils.js    ← todayISO(), addInterval(), getMonthRange()
 │           └── csvExport.js    ← expenses → CSV string
-└── frontend/
-    └── src/
-        ├── App.jsx             ← Router, ProtectedRoute wrapper
-        ├── index.css           ← Tailwind + .card/.btn/.input/.label component classes
-        ├── context/
-        │   └── AuthContext.jsx ← token, user, login/logout/updateUser, applyTheme()
-        ├── hooks/
-        │   ├── useAuth.js
-        │   └── useApi.js       ← axios instance with Authorization header
-        ├── api/                ← thin wrappers: each file = one backend route group
-        │   ├── authApi.js
-        │   ├── expensesApi.js
-        │   ├── categoriesApi.js
-        │   ├── budgetsApi.js
-        │   ├── recurringApi.js
-        │   ├── reportsApi.js
-        │   ├── accountsApi.js
-        │   ├── incomeApi.js
-        │   ├── goalsApi.js
-        │   ├── aiApi.js
-        │   └── settingsApi.js
-        ├── pages/
-        │   ├── Dashboard.jsx       ← Stats, AI input, latest transactions, budget alerts
-        │   ├── Transactions.jsx    ← Filterable expense table, pagination
-        │   ├── Reports.jsx         ← Charts: daily, weekly, category pie + summary, trend
-        │   ├── Recurring.jsx       ← List + add/delete recurring expenses
-        │   ├── Accounts.jsx        ← Multi-account, balance snapshots, savings goals, net worth
-        │   ├── Income.jsx          ← Income entries, filters, source badges
-        │   ├── Settings.jsx        ← Preferences, Claude API key, categories, budgets, CSV import
-        │   ├── Login.jsx
-        │   └── Signup.jsx
-        └── components/
-            ├── auth/
-            │   ├── ProtectedRoute.jsx
-            │   └── PublicHome.jsx
-            ├── common/
-            │   ├── Modal.jsx
-            │   ├── Toast.jsx
-            │   ├── Spinner.jsx
-            │   ├── EmptyState.jsx
-            │   ├── GlobalSearch.jsx    ← Ctrl+K search
-            │   └── TagInput.jsx
-            ├── layout/
-            │   ├── AppShell.jsx        ← Desktop sidebar + mobile hamburger drawer
-            │   └── Sidebar.jsx         ← Nav links: Dashboard, Transactions, Reports, Recurring, Accounts, Income, Settings
-            ├── dashboard/
-            │   ├── StatsBar.jsx        ← Row 1: Spent/Category/Daily/Transactions; Row 2: Income/CashFlow/NetWorth
-            │   ├── StatCard.jsx
-            │   ├── ExpenseInputPanel.jsx
-            │   ├── ParsedExpenseConfirm.jsx
-            │   ├── LatestTransactions.jsx
-            │   ├── BudgetAlerts.jsx
-            │   └── MonthlyInsight.jsx
-            └── settings/
-                ├── CategoriesManager.jsx
-                ├── BudgetManager.jsx
-                └── CsvImport.jsx
+├── frontend/
+│   └── src/
+│       ├── App.jsx             ← Router: "/" PublicHome, "/app/login", "/app/signup", "/app/*" ProtectedRoute
+│       ├── index.css           ← Tailwind + .card/.btn/.input/.label component classes
+│       ├── context/
+│       │   └── AuthContext.jsx ← token, user, login/logout/updateUser, applyTheme()
+│       ├── hooks/
+│       │   ├── useAuth.js
+│       │   └── useApi.js       ← axios instance with Authorization header
+│       ├── api/                ← thin wrappers: each file = one backend route group
+│       │   ├── authApi.js, expensesApi.js, categoriesApi.js, budgetsApi.js, recurringApi.js,
+│       │   ├── reportsApi.js, accountsApi.js (+ account groups), incomeApi.js, goalsApi.js,
+│       │   ├── aiApi.js (parse + askQuestion), settingsApi.js, adminApi.js, seedApi.js
+│       ├── pages/
+│       │   ├── Dashboard.jsx        ← Stats, AI input, Finance Chat, latest transactions, budget alerts, upcoming bills
+│       │   ├── Transactions.jsx     ← Tabs: Expenses table (filterable, paginated) + Recurring (moved here, no longer its own nav item)
+│       │   ├── Reports.jsx          ← Charts: daily, weekly, category pie + summary, trend
+│       │   ├── Recurring.jsx        ← Legacy standalone recurring UI; superseded by the Transactions tab (see gotcha #10)
+│       │   ├── Accounts.jsx         ← Multi-account (with groups), balance snapshots, net worth
+│       │   ├── RecordBalances.jsx   ← `/app/accounts/record` — bulk balance-snapshot entry flow for all accounts at once
+│       │   ├── Planning.jsx         ← Merges Budgets (BudgetManager) + Savings Goals into one screen
+│       │   ├── Income.jsx           ← Income entries, filters, source badges
+│       │   ├── Settings.jsx         ← Preferences, categories, budgets, CSV import, Danger Zone (clear-data)
+│       │   ├── Admin.jsx            ← Admin stats dashboard (visible only if user.is_admin === 1)
+│       │   ├── AdminUsers.jsx       ← Admin: paginated user list
+│       │   ├── AdminUserDetail.jsx  ← Admin: single user detail/drilldown
+│       │   ├── Login.jsx
+│       │   └── Signup.jsx
+│       └── components/
+│           ├── auth/            ProtectedRoute.jsx, PublicHome.jsx
+│           ├── common/          Modal.jsx, Toast.jsx, Spinner.jsx, EmptyState.jsx, GlobalSearch.jsx (Ctrl+K), TagInput.jsx
+│           ├── layout/           AppShell.jsx (desktop sidebar + mobile drawer), Sidebar.jsx (nav: Dashboard, Transactions,
+│           │                     Reports, Accounts, Income, Planning, Settings, + conditional Admin link)
+│           ├── dashboard/        StatsBar.jsx, StatCard.jsx, ExpenseInputPanel.jsx, ParsedExpenseConfirm.jsx,
+│           │                     LatestTransactions.jsx, BudgetAlerts.jsx, MonthlyInsight.jsx, UpcomingBills.jsx,
+│           │                     FinanceChat.jsx (natural-language Q&A over the user's finances, markdown+GFM tables)
+│           └── settings/         CategoriesManager.jsx, BudgetManager.jsx, CsvImport.jsx
+├── expensebeam_mobile/          ← Flutter app mirroring most web screens, talks to the same backend API
+│   └── lib/
+│       ├── main.dart
+│       ├── core/  api/api_client.dart (Dio), models/, providers/ (auth, theme), theme/, utils/formatters.dart
+│       ├── screens/  auth/, dashboard/, transactions/, accounts/ (+ history, edit), income/, goals/, recurring/,
+│       │             reports/, settings/ (+ categories), main_shell.dart
+│       └── widgets/  expense_tile.dart, stat_card.dart
+├── landing/                     ← Static marketing site (index.html + serve.cmd), separate from the React SPA
+├── docker-compose.yml           ← db (postgres:16-alpine) + backend + frontend (Caddy, auto-SSL)
+└── .worktrees/ui-variants       ← Active git worktree exploring visual styles for the expense-entry UI
 ```
 
 ---
 
 ## Database Schema
 
-All tables created with `IF NOT EXISTS` in `migrations.js` on every startup.
+PostgreSQL. All tables created with `CREATE TABLE IF NOT EXISTS` in `migrations.js`; new columns added since launch use `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, both run on every backend startup.
 
 ```sql
-users (id, email, password_hash, currency, accounts_currency, theme, claude_api_key, created_at)
+users (
+  id, email, password_hash, currency, accounts_currency, theme,
+  claude_api_key,           -- legacy column, unused (AI now uses server-side ANTHROPIC_API_KEY)
+  pin_hash, is_admin,
+  plan,                     -- 'free' | 'pro'
+  ai_used_this_month, ai_quota_reset_date,
+  play_purchase_token, subscription_expiry,
+  created_at
+)
 
-categories (id, user_id, name, icon, color, created_at)
+categories (id, user_id, name, icon, color, is_default, created_at)
 subcategories (id, category_id, user_id, name, created_at)
 
 expenses (
   id, user_id, amount, currency, exchange_rate, date,
-  category_id, subcategory_id, description, tags, notes,
+  category_id, subcategory_id, description, notes, tags, raw_text,
   is_recurring, recurring_id, created_at
 )
 
@@ -164,12 +180,15 @@ recurring_expenses (
 )
 -- INDEX: (user_id, next_due_date)
 
-monthly_insights (id, user_id, year_month, insight_text, created_at)
+monthly_insights (id, user_id, year_month, insight, created_at)
 
 accounts (
   id, user_id, name, type,         -- type: 'monetary' | 'commodity' | 'liability'
-  currency, icon, color, notes, created_at
+  currency, icon, unit, sort_order, group_id → account_groups, created_at
 )
+
+account_groups (id, user_id, name, icon, sort_order, created_at)
+-- INDEX: (user_id)
 
 account_balances (
   id, account_id, user_id,
@@ -190,6 +209,10 @@ incomes (
   -- source: Salary | Business | Freelance | Investment | Rental | Gift | Other
 )
 -- INDEX: (user_id, date)
+
+ai_parse_cache (id, cache_key UNIQUE, response_json, created_at)
+-- 24h SHA-256(userId:text) cache for /ai/parse and /ai/ask responses; cached hits don't count against quota
+-- INDEX: (cache_key)
 ```
 
 ---
@@ -197,20 +220,31 @@ incomes (
 ## Key Features & How They Work
 
 ### Authentication
-- `POST /api/auth/login` → verifies bcrypt hash → returns JWT
+- `POST /api/auth/login` / `/signup` → verifies/creates bcrypt hash → returns JWT + user (including `is_admin`)
 - JWT signed with `JWT_SECRET`, decoded in `middleware/auth.js` → sets `req.user.userId`
 - Frontend stores token in localStorage, attaches via `Authorization: Bearer` header in `useApi.js`
 
+### Freemium AI + Subscriptions
+- `users.plan` is `'free'` or `'pro'`. Free users get **403 `pro_required`** on any AI call; Pro users get **100 AI calls/month**, tracked in `ai_used_this_month`.
+- `enforceAiQuota` middleware in `routes/ai.js` gates both `POST /ai/parse` and `POST /ai/ask` — checks plan, then quota, before calling Claude.
+- Every AI request/response is cached 24h in `ai_parse_cache` keyed by `sha256(userId:inputText)`; a cache hit returns immediately and does **not** increment `ai_used_this_month`.
+- `POST /api/subscription/verify` (mobile app, Google Play) takes `{ purchase_token, product_id, platform }`, calls the Google Play Developer API (`routes/subscription.js` builds its own OAuth JWT assertion from `GOOGLE_SERVICE_ACCOUNT_JSON`), rejects tokens already linked to another account, and on success sets `plan = 'pro'`, `subscription_expiry`, `play_purchase_token`.
+- Cron in `server.js`: resets `ai_used_this_month` for all pro users on the 1st of each month (`0 0 1 * *`); downgrades expired pro users to free daily at 1 AM (`0 1 * * *`).
+
 ### Expense Parsing (AI)
 - User types natural language in `ExpenseInputPanel` ("coffee 45 EGP, lunch 120")
-- `POST /api/ai/parse` → aiService calls Claude with structured prompt → returns parsed expense array
+- `POST /api/ai/parse` (quota-gated, cached) → `aiService.parseExpenses()` calls Claude with a structured prompt → returns parsed expense array
 - User confirms in `ParsedExpenseConfirm` modal → bulk inserted via `POST /api/expenses`
+
+### Finance Chat (AI Q&A)
+- `FinanceChat.jsx` on the Dashboard lets the user ask free-form questions ("Am I on track with my budgets?")
+- `POST /api/ai/ask` (quota-gated, cached) assembles context — recent expenses, category totals, incomes, budgets vs. spend, goals, accounts, dashboard stats — and calls `aiService.answerQuestion()`
+- Response is markdown, rendered with `react-markdown` + `remark-gfm` (so tables render correctly)
 
 ### Monthly Insights (AI)
 - `MonthlyInsight` component on Dashboard calls `GET /api/ai/insights`
-- `insights.js` route checks if insight for current month already exists in `monthly_insights` table
+- `insights.js` route checks if an insight for the current month already exists in `monthly_insights`
 - If not, calls Claude with spending data → stores result → returns markdown text
-- Rendered with `react-markdown`
 
 ### Exchange Rates
 - `GET /api/rates?base=EGP` (or any currency)
@@ -223,18 +257,26 @@ incomes (
 - `recurringService.processOverdue()` queries `WHERE next_due_date <= today`
 - Inserts each as a real expense (`is_recurring=1, recurring_id=X`) and advances `next_due_date` by interval
 - Called once on startup (catches backlog) and then by node-cron daily at midnight (`0 0 * * *`)
+- UI lives as a tab inside `Transactions.jsx` (see gotcha #10) — `Recurring.jsx` still exists as a standalone page component but is not linked from the sidebar
 
-### Multi-Currency Accounts
-- Each account has its own `currency`
+### Multi-Currency Accounts & Groups
+- Each account has its own `currency`, optional `group_id` (→ `account_groups`, user-defined, drag-reorderable via `sort_order`)
 - Balance snapshots store `exchange_rate` at time of entry (commodity: `quantity × price_per_unit = balance`)
 - Net Worth = Σ(asset balances converted to home currency) − Σ(liability balances converted)
-- Accounts page: asset accounts + liability accounts shown in separate sections
-- Trend chart builds date-grouped totals subtracting liabilities
+- `RecordBalances.jsx` (`/app/accounts/record`) provides a single flow to snapshot every account's balance at once, instead of editing accounts one at a time
 
-### Savings Goals
-- Can be linked to an account (`account_id`) → progress = `account.latest_balance / target_amount`
-- Or tracked manually → progress = `current_amount / target_amount`
+### Savings Goals & Planning
+- `Planning.jsx` combines `BudgetManager` (category budgets) and Goals management in one page — replaces a separate Budgets nav entry
+- Goal linked to an account (`account_id` set) → progress = `account.latest_balance / target_amount`; unlinked → progress = `current_amount / target_amount`
 - Days-left badge: amber < 30 days, red if overdue
+
+### Admin Dashboard
+- Gated by `users.is_admin = 1`; `middleware/adminAuth.js` enforces it server-side, `Sidebar.jsx` only renders the nav link client-side when `user.is_admin === 1`
+- `GET /api/admin/stats` — total/new/active users, expense & income totals, account count, users with a (legacy) API key set, signups by month
+- `GET /api/admin/users`, `GET /api/admin/users/:id`, `DELETE /api/admin/users/:id` — user list/detail/removal
+
+### Demo Data Seeding
+- `POST /api/seed` — one-shot demo data generator for a fresh account (8 categories/subcategories, 4 accounts with balance history, ~40 expenses, income, budgets, recurring bills, 2 savings goals). Refuses to run if the user already has expenses; `Settings.jsx` "Danger Zone" → `POST /api/settings/clear-data` wipes a user's data so seeding can be re-run.
 
 ### Themes
 - `user.theme` values: `light` | `dark` | `system` | `high-contrast`
@@ -249,8 +291,8 @@ incomes (
 ### Auth — `/api/auth`
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/login` | Email + password → JWT |
-| POST | `/signup` | Create account → JWT |
+| POST | `/login` | Email + password → JWT + user (incl. `is_admin`) |
+| POST | `/signup` | Create account → JWT + user |
 
 ### Expenses — `/api/expenses`
 | Method | Path | Description |
@@ -273,12 +315,22 @@ incomes (
 |--------|------|-------------|
 | GET | `/` | All accounts with latest_balance joined |
 | POST | `/` | Create account |
+| PUT | `/reorder` | Bulk update `sort_order` |
 | PUT | `/:id` | Update account |
 | DELETE | `/:id` | Delete account |
+| GET | `/:id/history` | All snapshots for account |
 | POST | `/balances` | Add balance snapshot |
 | PUT | `/balances/:id` | Edit snapshot |
 | DELETE | `/balances/:id` | Delete snapshot |
-| GET | `/:id/history` | All snapshots for account |
+
+### Account Groups — `/api/account-groups`
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/` | All groups for user, ordered by sort_order |
+| POST | `/` | Create group |
+| PUT | `/:id` | Update group |
+| DELETE | `/:id` | Delete group |
+| PUT | `/reorder` | Bulk update sort_order |
 
 ### Goals — `/api/goals`
 | Method | Path | Description |
@@ -305,14 +357,34 @@ incomes (
 ### Settings — `/api/settings`
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/` | currency, accounts_currency, theme, hasApiKey |
-| PUT | `/` | Update currency, theme, claudeApiKey, accounts_currency |
+| GET | `/` | currency, accounts_currency, theme |
+| PUT | `/` | Update currency, theme, accounts_currency |
+| POST | `/clear-data` | Danger Zone — wipes the user's expenses/income/accounts/etc. |
 
-### AI — `/api/ai`
+### AI — `/api/ai` (all quota-gated via `enforceAiQuota`, all 24h-cached)
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/parse` | Natural language → expense array |
-| GET | `/insights` | Monthly AI insight (cached in DB) |
+| POST | `/parse` | Natural language → expense array. 403 `pro_required` (free plan) / 429 `quota_exceeded` |
+| POST | `/ask` | Finance Chat: free-form question + financial context → markdown answer |
+
+### Subscription — `/api/subscription`
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/` | Current plan, ai_used, ai_limit, reset_date |
+| POST | `/verify` | Verify a Google Play purchase token → upgrades to `pro` |
+
+### Admin — `/api/admin` (requires `is_admin`)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/stats` | Aggregate usage stats for the whole app |
+| GET | `/users` | Paginated user list |
+| GET | `/users/:id` | Single user detail |
+| DELETE | `/users/:id` | Delete a user |
+
+### Seed — `/api/seed`
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/` | Generate demo data for the current user (no-ops if they already have expenses) |
 
 ---
 
@@ -349,6 +421,12 @@ incomes (
 
 ---
 
+## Deployment
+
+Production runs via Docker Compose on a single host (`expensebeam.com`): a `postgres:16-alpine` container, a Node backend container, and a Caddy-based frontend container that serves the React build and reverse-proxies `/api/*` to the backend with automatic SSL. `docker-compose.yml` derives `DATABASE_URL` from `DB_PASSWORD`; `JWT_SECRET`, `DOMAIN`, and `DB_PASSWORD` come from a server-side `.env`. DB migrations run automatically on backend startup (`IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`, safe to run every deploy). Full deploy commands, SSH details, and secrets are tracked outside this repo — ask if you need them.
+
+---
+
 ## Things to Know / Gotchas
 
 1. **Exchange rate fallback**: Records inserted before the exchange rate feature was added have `exchange_rate=1.0`. The Accounts page detects this (`exchange_rate === 1.0 && currency !== homeCurrency`) and uses live rates as approximation, shown with `~` prefix.
@@ -359,7 +437,7 @@ incomes (
 
 4. **Savings goals progress**: If `account_id` is set, progress reads `latest_balance` from the joined account query. If null, reads `current_amount` from the goal itself.
 
-5. **Recurring expenses**: `processOverdue()` handles multiple missed intervals in one call (keeps advancing `next_due_date` until it's in the future isn't needed — it only fires once per call, so if 3 months are missed, it creates 1 expense and advances by 1 interval; the next startup/cron run creates the next one). Cron fires daily at midnight.
+5. **Recurring expenses**: `processOverdue()` handles multiple missed intervals in one call (it only fires once per call, so if 3 months are missed, it creates 1 expense and advances by 1 interval; the next startup/cron run creates the next one). Cron fires daily at midnight.
 
 6. **incomeThisMonth in dashboard stats**: Added to `expenseService.getDashboardStats()` — queries the `incomes` table for the current calendar month and returns the total alongside expense stats.
 
@@ -370,3 +448,15 @@ incomes (
 9. **CSV import**: Parses uploaded file via `csv-parse`, auto-matches categories via `categoryService.findOrCreate()`.
 
 10. **Global search**: `Ctrl+K` dispatched from AppShell header button; `GlobalSearch.jsx` listens for the keyboard event and renders a search overlay.
+
+11. **Recurring is a tab, not a page**: `Recurring.jsx` still exists as a component but is no longer linked from `Sidebar.jsx` — its functionality was moved into a tab inside `Transactions.jsx`. Don't add a sidebar entry back for it without checking whether the old page is still meant to be reachable.
+
+12. **AI is server-funded and quota-gated, not BYO-key**: `users.claude_api_key` and `cryptoService.js` are legacy leftovers from an earlier per-user-key design. All Claude calls now use `ANTHROPIC_API_KEY` from the backend's own env, and are gated by `enforceAiQuota` in `routes/ai.js` (plan check + monthly counter) plus a 24h response cache in `ai_parse_cache`. When touching AI routes, remember cached hits must not increment `ai_used_this_month`.
+
+13. **Backend is PostgreSQL, not SQLite**: `db/database.js` wraps a `pg` Pool with `query()/queryOne()/execute()` helpers — there is no `better-sqlite3` and no local `.db` file. Local dev needs a running Postgres instance and `DATABASE_URL` in `backend/.env`; schema changes go in `migrations.js` as idempotent `CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` statements, not one-off migration scripts.
+
+14. **Mobile app shares the backend, not the frontend code**: `expensebeam_mobile/` is an independent Flutter client (its own models/screens/state) that calls the same REST API as the React app. Feature parity between them is manual — a new backend endpoint or web page doesn't automatically show up on mobile.
+
+15. **`landing/` is a separate static site**: not part of the React SPA build and not wired into `docker-compose.yml`/Caddy; treat it as a standalone marketing page.
+
+16. **`.worktrees/ui-variants`**: an active git worktree (separate branch, separate checkout) experimenting with visual styles for the expense-entry flow. Changes there don't affect `master` until merged — don't assume edits under `.worktrees/` are live in the main app.

@@ -185,6 +185,29 @@ async function runMigrations() {
       CREATE INDEX IF NOT EXISTS idx_ai_cache_key ON ai_parse_cache(cache_key);
     `);
 
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS telegram_links (
+        id        SERIAL PRIMARY KEY,
+        user_id   INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        chat_id   BIGINT NOT NULL UNIQUE,
+        linked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS telegram_link_codes (
+        id         SERIAL PRIMARY KEY,
+        user_id    INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        code       TEXT NOT NULL UNIQUE,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS telegram_sessions (
+        chat_id          BIGINT PRIMARY KEY REFERENCES telegram_links(chat_id) ON DELETE CASCADE,
+        pending_expenses JSONB NOT NULL,
+        updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+
     console.log('[migrations] Schema up to date');
   } finally {
     client.release();

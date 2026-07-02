@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Bot, Globe, FolderOpen, Upload, CheckCircle, Trash2, ShieldAlert, Sparkles } from 'lucide-react';
+import { Globe, FolderOpen, Upload, Trash2, ShieldAlert, Sparkles, Send } from 'lucide-react';
 import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import { getSettings, updateSettings } from '../api/settingsApi';
@@ -10,6 +10,7 @@ import Spinner from '../components/common/Spinner';
 import Modal from '../components/common/Modal';
 import CategoriesManager from '../components/settings/CategoriesManager';
 import CsvImport from '../components/settings/CsvImport';
+import TelegramConnect from '../components/settings/TelegramConnect';
 
 const CURRENCIES = ['EGP','USD','EUR','GBP','ILS','SAR','AED','JPY','CAD','AUD','CHF','INR'];
 
@@ -110,8 +111,7 @@ function ClearDataModal({ hasPin, api, onClose }) {
 export default function Settings() {
   const api = useApi();
   const { user, updateUser } = useAuth();
-  const [settings, setSettings] = useState({ currency: 'EGP', accounts_currency: null, hasApiKey: false, hasPin: false, theme: 'light' });
-  const [apiKey, setApiKey]       = useState('');
+  const [settings, setSettings] = useState({ currency: 'EGP', accounts_currency: null, hasPin: false, theme: 'light' });
   const [categories, setCategories] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [saving, setSaving]       = useState(null);
@@ -144,18 +144,6 @@ export default function Settings() {
     setSaving(null);
   }
 
-  async function saveApiKey() {
-    if (!apiKey.trim()) return;
-    setSaving('key');
-    try {
-      const result = await updateSettings(api, { claudeApiKey: apiKey });
-      setSettings(prev => ({ ...prev, ...result }));
-      setApiKey('');
-      showToast('API key saved');
-    } catch { showToast('Failed to save key', 'error'); }
-    setSaving(null);
-  }
-
   function handleClearClose(wasCleared) {
     setShowClearModal(false);
     if (wasCleared) fetchAll();
@@ -180,62 +168,45 @@ export default function Settings() {
 
   return (
     <div className="space-y-5 animate-fade-in">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Preferences */}
-        <SectionCard icon={Globe} title="Preferences">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="label">Currency</label>
-              <select className="input" value={settings.currency} onChange={e => setSettings(p => ({ ...p, currency: e.target.value }))}>
-                {CURRENCIES.map(c => <option key={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="label">Accounts Total Currency</label>
-              <select
-                className="input"
-                value={settings.accounts_currency ?? settings.currency}
-                onChange={e => setSettings(p => ({ ...p, accounts_currency: e.target.value || null }))}
-              >
-                <option value="">— Same as home currency —</option>
-                {CURRENCIES.map(c => <option key={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="label">Theme</label>
-              <select className="input" value={settings.theme} onChange={e => setSettings(p => ({ ...p, theme: e.target.value }))}>
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-                <option value="system">System (follows OS)</option>
-                <option value="high-contrast">High Contrast</option>
-              </select>
-            </div>
-          </div>
-          <button onClick={savePreferences} disabled={saving === 'prefs'} className="btn-primary">
-            {saving === 'prefs' ? <><Spinner size="sm" /> Saving…</> : 'Save preferences'}
-          </button>
-        </SectionCard>
-
-        {/* Claude AI */}
-        <SectionCard icon={Bot} title="Claude AI Integration">
-          {settings.hasApiKey && (
-            <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 text-sm bg-emerald-50 dark:bg-emerald-900/20 px-3 py-2 rounded-xl">
-              <CheckCircle size={14} /> API key is saved and active
-            </div>
-          )}
+      {/* Preferences */}
+      <SectionCard icon={Globe} title="Preferences">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="label">{settings.hasApiKey ? 'Replace API key' : 'Claude API key'}</label>
-            <input type="password" className="input" placeholder="sk-ant-..." value={apiKey}
-              onChange={e => setApiKey(e.target.value)} />
-            <p className="text-xs text-gray-400 dark:text-slate-500 mt-1.5">
-              Your key is AES-256 encrypted and never returned by the API.
-            </p>
+            <label className="label">Currency</label>
+            <select className="input" value={settings.currency} onChange={e => setSettings(p => ({ ...p, currency: e.target.value }))}>
+              {CURRENCIES.map(c => <option key={c}>{c}</option>)}
+            </select>
           </div>
-          <button onClick={saveApiKey} disabled={saving === 'key' || !apiKey} className="btn-primary">
-            {saving === 'key' ? <><Spinner size="sm" /> Saving…</> : 'Save API key'}
-          </button>
-        </SectionCard>
-      </div>
+          <div>
+            <label className="label">Accounts Total Currency</label>
+            <select
+              className="input"
+              value={settings.accounts_currency ?? settings.currency}
+              onChange={e => setSettings(p => ({ ...p, accounts_currency: e.target.value || null }))}
+            >
+              <option value="">— Same as home currency —</option>
+              {CURRENCIES.map(c => <option key={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Theme</label>
+            <select className="input" value={settings.theme} onChange={e => setSettings(p => ({ ...p, theme: e.target.value }))}>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+              <option value="system">System (follows OS)</option>
+              <option value="high-contrast">High Contrast</option>
+            </select>
+          </div>
+        </div>
+        <button onClick={savePreferences} disabled={saving === 'prefs'} className="btn-primary">
+          {saving === 'prefs' ? <><Spinner size="sm" /> Saving…</> : 'Save preferences'}
+        </button>
+      </SectionCard>
+
+      {/* Telegram */}
+      <SectionCard icon={Send} title="Telegram">
+        <TelegramConnect api={api} />
+      </SectionCard>
 
       {/* Categories */}
       <SectionCard icon={FolderOpen} title="Categories">

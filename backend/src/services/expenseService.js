@@ -1,5 +1,7 @@
-const { query, queryOne } = require('../db/database');
-const { getMonthRange } = require('../utils/dateUtils');
+const { query, queryOne, execute } = require('../db/database');
+const { getMonthRange, currentYearMonth } = require('../utils/dateUtils');
+const expenseModel = require('../models/expenseModel');
+const { matchOrCreateCategory } = require('./categoryService');
 
 async function getDashboardStats(userId) {
   const now = new Date();
@@ -109,4 +111,30 @@ async function getTopDays(userId, startDate, endDate, limit = 10) {
   );
 }
 
-module.exports = { getDashboardStats, getMonthlyByCategory, getSpendingTrend, getCategoryBreakdown, getMoMComparison, getTopDays };
+async function invalidateInsightCache(userId, dates = []) {
+  const months = new Set([currentYearMonth()]);
+  for (const d of dates) { if (d) months.add(d.slice(0, 7)); }
+  for (const ym of months) {
+    await execute('DELETE FROM monthly_insights WHERE user_id = $1 AND year_month = $2', [userId, ym]);
+  }
+}
+
+async function createExpenses(userId, expenses) {
+  const resolved = await Promise.all(expenses.map(async e => {
+    const { category_id, subcategory_id } = await matchOrCreateCategory(
+      userId, e.category, e.subcategory
+    );
+    return { ...e, category_id, subcategory_id };
+  }));
+
+  const ids = await expenseModel.insertMany(userId, resolved);
+  const created = await Promise.all(ids.map(id => expenseModel.findById(id, userId)));
+
+  await invalidateInsightCache(userId, resolved.map(e => e.date));
+  return created;
+}
+
+module.exports = {
+  getDashboardStats, getMonthlyByCategory, getSpendingTrend, getCategoryBreakdown, getMoMComparison, getTopDays,
+  createExpenses, invalidateInsightCache,
+};

@@ -2,16 +2,7 @@ const router = require('express').Router();
 const auth = require('../middleware/auth');
 const expenseModel = require('../models/expenseModel');
 const { matchOrCreateCategory } = require('../services/categoryService');
-const { execute } = require('../db/database');
-const { currentYearMonth } = require('../utils/dateUtils');
-
-async function invalidateInsightCache(userId, dates = []) {
-  const months = new Set([currentYearMonth()]);
-  for (const d of dates) { if (d) months.add(d.slice(0, 7)); }
-  for (const ym of months) {
-    await execute('DELETE FROM monthly_insights WHERE user_id = $1 AND year_month = $2', [userId, ym]);
-  }
-}
+const { createExpenses, invalidateInsightCache } = require('../services/expenseService');
 
 router.get('/', auth, async (req, res, next) => {
   try {
@@ -33,17 +24,7 @@ router.post('/', auth, async (req, res, next) => {
     if (!Array.isArray(expenses) || !expenses.length)
       return res.status(400).json({ error: 'expenses array required' });
 
-    const resolved = await Promise.all(expenses.map(async e => {
-      const { category_id, subcategory_id } = await matchOrCreateCategory(
-        req.user.userId, e.category, e.subcategory
-      );
-      return { ...e, category_id, subcategory_id };
-    }));
-
-    const ids = await expenseModel.insertMany(req.user.userId, resolved);
-    const created = await Promise.all(ids.map(id => expenseModel.findById(id, req.user.userId)));
-
-    await invalidateInsightCache(req.user.userId, resolved.map(e => e.date));
+    const created = await createExpenses(req.user.userId, expenses);
     res.status(201).json({ created });
   } catch (err) { next(err); }
 });

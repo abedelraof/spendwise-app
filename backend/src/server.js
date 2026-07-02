@@ -3,6 +3,7 @@ const cron = require('node-cron');
 const app = require('./app');
 const runMigrations = require('./db/migrations');
 const { processOverdue } = require('./services/recurringService');
+const telegramBotService = require('./services/telegramBotService');
 
 const { execute } = require('./db/database');
 
@@ -11,6 +12,7 @@ const PORT = process.env.PORT || 3001;
 (async () => {
   await runMigrations();
   await processOverdue(); // catch any backlog on startup
+  await telegramBotService.launch(); // no-op if TELEGRAM_BOT_TOKEN isn't set
 
   // Apply overdue recurring expenses every day at midnight
   cron.schedule('0 0 * * *', async () => {

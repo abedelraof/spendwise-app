@@ -2,12 +2,21 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const errorHandler = require('./middleware/errorHandler');
+const { getBot } = require('./services/telegramBotService');
 
 const app = express();
 
 app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173', credentials: true }));
+
+// Telegram webhook must be mounted before express.json() — Telegraf parses its own request body.
+const telegramBot = getBot();
+if (telegramBot && process.env.TELEGRAM_MODE !== 'polling' && process.env.TELEGRAM_WEBHOOK_SECRET) {
+  app.use(telegramBot.webhookCallback(`/api/telegram/webhook/${process.env.TELEGRAM_WEBHOOK_SECRET}`));
+}
+
 app.use(express.json());
 
+app.use('/api/telegram-link', require('./routes/telegramLink'));
 app.use('/api/auth',       require('./routes/auth'));
 app.use('/api/settings',   require('./routes/settings'));
 app.use('/api/categories', require('./routes/categories'));

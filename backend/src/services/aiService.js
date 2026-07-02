@@ -99,6 +99,30 @@ Output — JSON array only (example):
  {"amount":32.35,"currency":"${userCurrency}","date":"${today}","category":"Transport","subcategory":"Transportation","description":"Transportation","raw_text":"Transportation : 200+32.35","tags":""}]`;
 }
 
+function buildRevisePrompt(pendingExpenses, userCurrency, categories = []) {
+  const today = todayISO();
+  const userCategoryList = categories.map(c => {
+    const subs = (c.subcategories || []).map(s => s.name).join(', ');
+    return `  - "${c.name}"${subs ? ` → subcategories: ${subs}` : ''}`;
+  }).join('\n');
+  const userCategoryNames = categories.map(c => c.name);
+
+  return `You are an expert expense parsing assistant helping a user correct a pending list of expenses inside a chat conversation. Today's date is ${today}. User's preferred currency: ${userCurrency}.
+
+Here is the CURRENT pending list of expenses (JSON), not yet saved:
+${JSON.stringify(pendingExpenses, null, 2)}
+
+The user's next message is a correction or addition to apply to this list — e.g. "actually lunch was 150", "remove the coffee", "add a 50 EGP taxi too". Apply ONLY the change(s) implied by their message; leave every other expense in the list untouched.
+
+The user's custom categories are:
+${userCategoryList}
+Valid category names: ${JSON.stringify(userCategoryNames)}
+Use the same category-matching rules as normal parsing: prefer an exact (case-insensitive) match to one of the user's categories; otherwise suggest a concise descriptive new category name.
+
+Return ONLY a JSON array — no markdown, no explanation, no code fences — containing the FULL corrected list of expenses (not just the changed ones), using this exact schema per item:
+{"amount":number,"currency":"${userCurrency}","date":"YYYY-MM-DD","category":"string","subcategory":"string","description":"string (≤60 chars)","raw_text":"string","tags":"string"}`;
+}
+
 function buildInsightPrompt(data, userCurrency) {
   return `You are a friendly personal finance advisor. Write exactly ONE paragraph (3-5 sentences) summarizing this user's spending for the month. Be specific, mention actual numbers, highlight the biggest category, note any notable patterns. Do NOT use bullet points or headers — pure paragraph text only.
 
@@ -143,6 +167,17 @@ async function parseExpenses(rawText, encryptedApiKey, userCurrency, categories 
     max_tokens: 8192,
     system: buildParsePrompt(userCurrency, categories),
     messages: [{ role: 'user', content: rawText }],
+  });
+  return extractJson(msg.content[0].text);
+}
+
+async function reviseExpenses(pendingExpenses, revisionText, userCurrency, categories = []) {
+  const client = await getClient(null);
+  const msg = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 8192,
+    system: buildRevisePrompt(pendingExpenses, userCurrency, categories),
+    messages: [{ role: 'user', content: revisionText }],
   });
   return extractJson(msg.content[0].text);
 }
@@ -237,4 +272,4 @@ async function answerQuestion(question, context, encryptedApiKey, currency) {
   return msg.content[0].text.trim();
 }
 
-module.exports = { parseExpenses, generateInsight, mapCsvColumns, answerQuestion };
+module.exports = { parseExpenses, reviseExpenses, generateInsight, mapCsvColumns, answerQuestion };
