@@ -8,6 +8,7 @@ const { parseExpenses, reviseExpenses, answerQuestion } = require('./aiService')
 const { createExpenses, getDashboardStats, getFinanceContext, getRangeStats, invalidateInsightCache } = require('./expenseService');
 const accountService = require('./accountService');
 const ratesService = require('./ratesService');
+const budgetService = require('./budgetService');
 const { generateMonthlyInsight } = require('./insightService');
 const { yesterdayISO, todayISO } = require('../utils/dateUtils');
 
@@ -68,14 +69,26 @@ Top category: ${stats.topCategory ?? 'N/A'}
 Transactions: ${stats.transactionCount}${avgLine}`;
 }
 
-function formatBudgets(budgets, currency) {
-  if (!budgets.length) return 'You don\'t have any budgets set up yet — add some from Planning in the app.';
+function formatBudgets(budgets, currency, capInfo) {
+  if (!budgets.length && capInfo?.cap == null) {
+    return 'You don\'t have any budgets set up yet — add some from Planning in the app.';
+  }
+
+  let overallLine = '';
+  if (capInfo?.cap != null) {
+    const pct = capInfo.cap > 0 ? Math.round((capInfo.allocated / capInfo.cap) * 100) : 0;
+    const emoji = pct >= 100 ? '🔴' : pct >= 80 ? '🟠' : '🟢';
+    overallLine = `${emoji} Overall: ${fmtAmount(capInfo.allocated)} / ${fmtAmount(capInfo.cap)} ${currency} (${pct}%) — ${fmtAmount(capInfo.remaining)} remaining\n\n`;
+  }
+
+  if (!budgets.length) return `💰 Budgets This Month\n\n${overallLine}No category budgets set up yet.`;
+
   const lines = budgets.map(b => {
     const pct = b.budget_limit > 0 ? Math.round((b.spent / b.budget_limit) * 100) : 0;
     const emoji = pct >= 100 ? '🔴' : pct >= 80 ? '🟠' : '🟢';
     return `${emoji} ${b.category}: ${fmtAmount(b.spent)} / ${fmtAmount(b.budget_limit)} ${currency} (${pct}%)`;
   });
-  return `💰 Budgets This Month\n\n${lines.join('\n')}`;
+  return `💰 Budgets This Month\n\n${overallLine}${lines.join('\n')}`;
 }
 
 function formatRecent(expenses, currency) {
@@ -213,7 +226,8 @@ function createBot() {
     const user = await getLinkedUser(ctx.chat.id);
     if (!user) return ctx.reply(NOT_LINKED_MSG);
     const { budgets } = await getFinanceContext(user.id);
-    await ctx.reply(formatBudgets(budgets, user.currency));
+    const capInfo = await budgetService.getMonthlyCapInfo(user.id);
+    await ctx.reply(formatBudgets(budgets, user.currency, capInfo));
   });
 
   instance.command('recent', async (ctx) => {

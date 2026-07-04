@@ -2,9 +2,83 @@ import { useState } from 'react';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { showToast } from '../common/Toast';
 import EmptyState from '../common/EmptyState';
-import { createBudget, updateBudget, deleteBudget } from '../../api/budgetsApi';
+import { createBudget, updateBudget, deleteBudget, setBudgetCap } from '../../api/budgetsApi';
 
-export default function BudgetManager({ budgets, categories, api, onRefresh }) {
+function errorMessage(err, fallback) {
+  return err?.response?.data?.error || fallback;
+}
+
+function CapSummary({ cap, api, onRefresh }) {
+  const [editing, setEditing] = useState(false);
+  const [amount,  setAmount]  = useState('');
+  const [saving,  setSaving]  = useState(false);
+
+  const hasCap = cap?.cap != null;
+  const pct = hasCap && cap.cap > 0 ? Math.min(100, Math.round((cap.allocated / cap.cap) * 100)) : 0;
+  const barColor = pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-brand-500';
+
+  async function handleSave() {
+    const value = amount.trim() === '' ? null : Number(amount);
+    setSaving(true);
+    try {
+      await setBudgetCap(api, value);
+      setEditing(false);
+      onRefresh();
+      showToast(value == null ? 'Monthly budget cleared' : 'Monthly budget set');
+    } catch (err) {
+      showToast(errorMessage(err, 'Failed to set monthly budget'), 'error');
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700/60 bg-gray-50/60 dark:bg-slate-800/40">
+      {editing ? (
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="label">Monthly budget (blank to clear)</label>
+            <input type="number" min="0" step="0.01" className="input w-40" placeholder="e.g. 5000"
+              value={amount} onChange={e => setAmount(e.target.value)} autoFocus />
+          </div>
+          <button onClick={handleSave} disabled={saving} className="btn-primary text-xs py-1.5 px-3">Save</button>
+          <button onClick={() => setEditing(false)} className="btn-secondary text-xs py-1.5 px-3">Cancel</button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex-1 min-w-[200px]">
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                {hasCap ? 'Monthly Budget' : 'No monthly budget set'}
+              </p>
+              {hasCap && (
+                <span className="text-xs text-gray-500 dark:text-slate-400">
+                  {Number(cap.allocated).toLocaleString()} / {Number(cap.cap).toLocaleString()} allocated
+                  {cap.remaining != null && (
+                    <span className={`ml-1.5 font-semibold ${cap.remaining < 0 ? 'text-red-500' : ''}`}>
+                      ({Number(cap.remaining).toLocaleString()} left)
+                    </span>
+                  )}
+                </span>
+              )}
+            </div>
+            {hasCap && (
+              <div className="w-full bg-gray-100 dark:bg-slate-700 rounded-full h-2">
+                <div className={`h-2 rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
+              </div>
+            )}
+          </div>
+          <button
+            onClick={() => { setEditing(true); setAmount(hasCap ? String(cap.cap) : ''); }}
+            className="btn-secondary text-xs py-1.5 px-3 shrink-0">
+            {hasCap ? 'Edit' : 'Set Monthly Budget'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function BudgetManager({ budgets, categories, api, onRefresh, cap }) {
   const [adding,    setAdding]    = useState(false);
   const [form,      setForm]      = useState({ categoryId: '', amount: '', period: 'monthly' });
   const [editingId, setEditingId] = useState(null);
@@ -23,7 +97,7 @@ export default function BudgetManager({ budgets, categories, api, onRefresh }) {
       setAdding(false);
       onRefresh();
       showToast('Budget set');
-    } catch { showToast('Failed to set budget', 'error'); }
+    } catch (err) { showToast(errorMessage(err, 'Failed to set budget'), 'error'); }
   }
 
   async function handleEdit(id) {
@@ -32,13 +106,13 @@ export default function BudgetManager({ budgets, categories, api, onRefresh }) {
       setEditingId(null);
       onRefresh();
       showToast('Budget updated');
-    } catch { showToast('Failed to update budget', 'error'); }
+    } catch (err) { showToast(errorMessage(err, 'Failed to update budget'), 'error'); }
   }
 
   async function handleDelete(id) {
     if (!confirm('Delete this budget?')) return;
     try { await deleteBudget(api, id); onRefresh(); showToast('Budget deleted'); }
-    catch { showToast('Failed to delete budget', 'error'); }
+    catch (err) { showToast(errorMessage(err, 'Failed to delete budget'), 'error'); }
   }
 
   const existingCatIds  = new Set(budgets.map(b => b.category_id));
@@ -46,9 +120,12 @@ export default function BudgetManager({ budgets, categories, api, onRefresh }) {
 
   return (
     <div className="card overflow-hidden">
+      {/* Overall monthly budget */}
+      {cap && <CapSummary cap={cap} api={api} onRefresh={onRefresh} />}
+
       {/* Header */}
       <div className="px-5 py-4 border-b border-gray-100 dark:border-slate-700/60 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Monthly Budgets</h3>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Category Budgets</h3>
         {availableCats.length > 0 && (
           <button
             onClick={() => { setAdding(a => !a); setForm({ categoryId: '', amount: '', period: 'monthly' }); }}

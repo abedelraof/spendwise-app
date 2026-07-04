@@ -8,7 +8,7 @@ import EmptyState from '../components/common/EmptyState';
 import { showToast } from '../components/common/Toast';
 import BudgetManager from '../components/settings/BudgetManager';
 import { getGoals, createGoal, updateGoal, deleteGoal } from '../api/goalsApi';
-import { getBudgets } from '../api/budgetsApi';
+import { getBudgets, getBudgetCap } from '../api/budgetsApi';
 import { getCategories } from '../api/categoriesApi';
 import { getAccounts } from '../api/accountsApi';
 import { getSettings } from '../api/settingsApi';
@@ -199,6 +199,7 @@ export default function Planning() {
 
   const [goals,          setGoals]          = useState([]);
   const [budgets,        setBudgets]        = useState([]);
+  const [budgetCap,      setBudgetCap]      = useState(null);
   const [categories,     setCategories]     = useState([]);
   const [accounts,       setAccounts]       = useState([]);
   const [homeCurrency,   setHomeCurrency]   = useState(user?.currency ?? 'EGP');
@@ -207,15 +208,17 @@ export default function Planning() {
   const [editGoalTarget, setEditGoalTarget] = useState(null);
 
   const fetchAll = useCallback(async () => {
-    const [goalsRes, budgetsRes, catsRes, accRes, settingsRes] = await Promise.allSettled([
+    const [goalsRes, budgetsRes, capRes, catsRes, accRes, settingsRes] = await Promise.allSettled([
       getGoals(api),
       getBudgets(api),
+      getBudgetCap(api),
       getCategories(api),
       getAccounts(api),
       getSettings(api),
     ]);
     if (goalsRes.status    === 'fulfilled') setGoals(goalsRes.value.goals);
     if (budgetsRes.status  === 'fulfilled') setBudgets(budgetsRes.value.budgets);
+    if (capRes.status      === 'fulfilled') setBudgetCap(capRes.value);
     if (catsRes.status     === 'fulfilled') setCategories(catsRes.value.categories);
     if (accRes.status      === 'fulfilled') setAccounts(accRes.value.accounts);
     if (settingsRes.status === 'fulfilled') setHomeCurrency(settingsRes.value.currency ?? user?.currency ?? 'EGP');
@@ -273,7 +276,7 @@ export default function Planning() {
       />
 
       {/* Monthly Budgets */}
-      <BudgetManager budgets={budgets} categories={categories} api={api} onRefresh={fetchAll} />
+      <BudgetManager budgets={budgets} categories={categories} cap={budgetCap} api={api} onRefresh={fetchAll} />
 
       {/* Modals */}
       {showAddGoal && (

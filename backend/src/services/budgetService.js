@@ -1,4 +1,4 @@
-const { query, queryOne } = require('../db/database');
+const { query, queryOne, execute } = require('../db/database');
 const { getMonthRange } = require('../utils/dateUtils');
 
 async function getBudgetsWithSpending(userId) {
@@ -44,4 +44,30 @@ const removeBudget = (id, userId) =>
     [id, userId]
   );
 
-module.exports = { getBudgetsWithSpending, createBudget, updateBudget, removeBudget };
+async function getMonthlyCapInfo(userId, excludeBudgetId = null) {
+  const user = await queryOne('SELECT monthly_budget_cap FROM users WHERE id = $1', [userId]);
+  const cap = user?.monthly_budget_cap != null ? parseFloat(user.monthly_budget_cap) : null;
+
+  const allocatedRow = excludeBudgetId
+    ? await queryOne(
+        `SELECT COALESCE(SUM(amount), 0)::float AS total FROM budgets
+         WHERE user_id = $1 AND period = 'monthly' AND id != $2`,
+        [userId, excludeBudgetId]
+      )
+    : await queryOne(
+        `SELECT COALESCE(SUM(amount), 0)::float AS total FROM budgets
+         WHERE user_id = $1 AND period = 'monthly'`,
+        [userId]
+      );
+  const allocated = allocatedRow.total;
+
+  return { cap, allocated, remaining: cap != null ? cap - allocated : null };
+}
+
+const setMonthlyCap = (userId, amount) =>
+  execute('UPDATE users SET monthly_budget_cap = $1 WHERE id = $2', [amount, userId]);
+
+module.exports = {
+  getBudgetsWithSpending, createBudget, updateBudget, removeBudget,
+  getMonthlyCapInfo, setMonthlyCap,
+};

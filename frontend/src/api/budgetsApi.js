@@ -9,3 +9,9 @@ export const updateBudget = (api, id, amount) =>
 
 export const deleteBudget = (api, id) =>
   api.delete(`/budgets/${id}`).then(r => r.data);
+
+export const getBudgetCap = (api) =>
+  api.get('/budgets/cap').then(r => r.data);
+
+export const setBudgetCap = (api, amount) =>
+  api.put('/budgets/cap', { amount }).then(r => r.data);

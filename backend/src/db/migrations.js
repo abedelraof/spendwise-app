@@ -181,6 +181,10 @@ async function runMigrations() {
     `);
 
     await client.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_budget_cap NUMERIC;
+    `);
+
+    await client.query(`
       CREATE TABLE IF NOT EXISTS ai_parse_cache (
         id           SERIAL PRIMARY KEY,
         cache_key    TEXT        NOT NULL UNIQUE,
