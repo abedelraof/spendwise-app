@@ -1,10 +1,13 @@
 const { Telegraf, Markup } = require('telegraf');
-const { query, queryOne, execute } = require('../db/database');
+const { queryOne, execute } = require('../db/database');
 const userModel = require('../models/userModel');
 const categoryModel = require('../models/categoryModel');
 const expenseModel = require('../models/expenseModel');
+const goalModel = require('../models/goalModel');
 const { parseExpenses, reviseExpenses, answerQuestion } = require('./aiService');
-const { createExpenses, getDashboardStats, getFinanceContext } = require('./expenseService');
+const { createExpenses, getDashboardStats, getFinanceContext, invalidateInsightCache } = require('./expenseService');
+const accountService = require('./accountService');
+const ratesService = require('./ratesService');
 
 const NOT_LINKED_MSG = 'Your Telegram isn\'t connected to an ExpenseBeam account yet. Open the app → Settings → Connect Telegram to link it.';
 
@@ -14,6 +17,10 @@ const HELP_TEXT = `Here's what I can do:
 • /stats — this month's spending summary
 • /budgets — budget status for this month
 • /recent — your last few expenses
+• /goals — savings goal progress
+• /networth — assets minus liabilities across all accounts
+• /currency <amount> <from> [to] <to> — quick FX conversion, e.g. /currency 100 usd to egp
+• /undo — remove the expenses from your last confirmed message
 • /ask <question> — ask anything about your finances, e.g. /ask am I on track with my budgets?
 • /help — show this message`;
 
@@ -63,6 +70,33 @@ function formatRecent(expenses, currency) {
     return `${e.date} — ${e.description || category} — ${fmtAmount(e.amount)} ${e.currency || currency} (${category})`;
   });
   return `🧾 Recent Expenses\n\n${lines.join('\n')}`;
+}
+
+function formatGoals(goals, currency) {
+  if (!goals.length) return 'You don\'t have any savings goals yet — add one from Planning in the app.';
+  const lines = goals.map(g => {
+    const current = g.account_id && g.latest_balance != null ? parseFloat(g.latest_balance) : (g.current_amount ?? 0);
+    const pct = g.target_amount > 0 ? Math.min(100, Math.round((current / g.target_amount) * 100)) : 0;
+    let dueBadge = '';
+    if (g.target_date) {
+      const daysLeft = Math.ceil((new Date(g.target_date) - new Date()) / (1000 * 60 * 60 * 24));
+      dueBadge = daysLeft < 0 ? ' — Overdue' : ` — ${daysLeft}d left`;
+    }
+    return `${g.icon || '🎯'} ${g.name}: ${fmtAmount(current)} / ${fmtAmount(g.target_amount)} ${g.target_currency || currency} (${pct}%)${dueBadge}`;
+  });
+  return `🎯 Savings Goals\n\n${lines.join('\n')}`;
+}
+
+function formatNetWorth({ totalAssets, totalLiabilities, netWorth, homeCurrency, unconverted, accountCount }) {
+  if (!accountCount) return 'You don\'t have any accounts yet — add some from the Accounts page in the app.';
+  const note = unconverted
+    ? `\n\n(${unconverted} account${unconverted === 1 ? '' : 's'} excluded — no exchange rate available)`
+    : '';
+  return `🏦 Net Worth
+
+Assets: ${fmtAmount(totalAssets)} ${homeCurrency}
+Liabilities: ${fmtAmount(totalLiabilities)} ${homeCurrency}
+Net worth: ${fmtAmount(netWorth)} ${homeCurrency}${note}`;
 }
 
 const confirmKeyboard = Markup.inlineKeyboard([
@@ -159,6 +193,66 @@ function createBot() {
     }
   });
 
+  instance.command('goals', async (ctx) => {
+    const user = await getLinkedUser(ctx.chat.id);
+    if (!user) return ctx.reply(NOT_LINKED_MSG);
+    const goals = await goalModel.findByUser(user.id);
+    await ctx.reply(formatGoals(goals, user.currency));
+  });
+
+  instance.command('networth', async (ctx) => {
+    const user = await getLinkedUser(ctx.chat.id);
+    if (!user) return ctx.reply(NOT_LINKED_MSG);
+    const homeCurrency = user.accounts_currency || user.currency;
+    const netWorth = await accountService.getNetWorth(user.id, homeCurrency);
+    await ctx.reply(formatNetWorth(netWorth));
+  });
+
+  instance.command('currency', async (ctx) => {
+    const user = await getLinkedUser(ctx.chat.id);
+    if (!user) return ctx.reply(NOT_LINKED_MSG);
+
+    const args = ctx.message.text.replace(/^\/currency(@\S+)?\s*/i, '').trim();
+    const match = args.match(/^([\d.,]+)\s*([a-zA-Z]{3,4})(?:\s+to)?(?:\s+([a-zA-Z]{3,4}))?$/i);
+    if (!match) {
+      return ctx.reply('Usage: /currency 100 usd to egp (or /currency 100 usd to use your home currency)');
+    }
+
+    const amount = parseFloat(match[1].replace(/,/g, ''));
+    const from = match[2].toUpperCase();
+    const to = (match[3] || user.currency).toUpperCase();
+    if (isNaN(amount)) return ctx.reply('That amount doesn\'t look right — try /currency 100 usd to egp');
+
+    try {
+      const { rates } = await ratesService.getRates(from);
+      const rate = parseFloat(rates[to]);
+      if (isNaN(rate)) return ctx.reply(`I don't have a rate for ${to}.`);
+      const converted = amount * rate;
+      await ctx.reply(`${fmtAmount(amount)} ${from} = ${fmtAmount(converted)} ${to}\n(1 ${from} = ${rate} ${to})`);
+    } catch (err) {
+      console.error('[telegram] /currency failed', err);
+      await ctx.reply('Sorry, exchange rates are unavailable right now. Try again later.');
+    }
+  });
+
+  instance.command('undo', async (ctx) => {
+    const chatId = ctx.chat.id;
+    const link = await queryOne('SELECT user_id, last_expense_ids FROM telegram_links WHERE chat_id = $1', [chatId]);
+    if (!link) return ctx.reply(NOT_LINKED_MSG);
+    if (!link.last_expense_ids?.length) {
+      return ctx.reply('Nothing to undo — I don\'t have a recently confirmed batch from this chat.');
+    }
+
+    const result = await execute(
+      'DELETE FROM expenses WHERE id = ANY($1) AND user_id = $2',
+      [link.last_expense_ids, link.user_id]
+    );
+    await execute('UPDATE telegram_links SET last_expense_ids = NULL WHERE chat_id = $1', [chatId]);
+    await invalidateInsightCache(link.user_id);
+
+    await ctx.reply(`↩️ Removed ${result.rowCount} expense${result.rowCount === 1 ? '' : 's'} from your last confirmation.`);
+  });
+
   instance.on('text', async (ctx) => {
     const chatId = ctx.chat.id;
     const text = ctx.message.text.trim();
@@ -201,6 +295,7 @@ function createBot() {
 
     const created = await createExpenses(user.id, session.pending_expenses);
     await clearSession(chatId);
+    await execute('UPDATE telegram_links SET last_expense_ids = $1 WHERE chat_id = $2', [created.map(e => e.id), chatId]);
 
     const total = created.reduce((s, e) => s + Number(e.amount || 0), 0);
     await ctx.editMessageText(`✅ Recorded ${created.length} expense${created.length === 1 ? '' : 's'}, total ${fmtAmount(total)} ${user.currency}.`);
@@ -230,11 +325,15 @@ async function launch() {
 
   try {
     await instance.telegram.setMyCommands([
-      { command: 'stats',   description: "This month's spending summary" },
-      { command: 'budgets', description: 'Budget status for this month' },
-      { command: 'recent',  description: 'Your last few expenses' },
-      { command: 'ask',     description: 'Ask a question about your finances' },
-      { command: 'help',    description: 'Show what I can do' },
+      { command: 'stats',    description: "This month's spending summary" },
+      { command: 'budgets',  description: 'Budget status for this month' },
+      { command: 'recent',   description: 'Your last few expenses' },
+      { command: 'goals',    description: 'Savings goal progress' },
+      { command: 'networth', description: 'Assets minus liabilities' },
+      { command: 'currency', description: 'Quick FX conversion' },
+      { command: 'undo',     description: 'Remove your last confirmed expenses' },
+      { command: 'ask',      description: 'Ask a question about your finances' },
+      { command: 'help',     description: 'Show what I can do' },
     ]);
 
     if (process.env.TELEGRAM_MODE === 'polling') {

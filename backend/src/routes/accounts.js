@@ -1,24 +1,9 @@
 const router = require('express').Router();
 const auth   = require('../middleware/auth');
 const { query, queryOne, execute, pool } = require('../db/database');
+const { getAccountsWithBalances } = require('../services/accountService');
 
-const LIST_SQL = `
-  SELECT a.*,
-    b.balance         AS latest_balance,
-    b.recorded_date   AS latest_date,
-    b.quantity        AS latest_quantity,
-    b.price_per_unit  AS latest_price_per_unit
-  FROM accounts a
-  LEFT JOIN account_balances b ON b.id = (
-    SELECT id FROM account_balances
-    WHERE account_id = a.id
-    ORDER BY recorded_date DESC, created_at DESC LIMIT 1
-  )
-  WHERE a.user_id = $1
-  ORDER BY a.sort_order ASC, a.created_at ASC
-`;
-
-const list = (userId) => query(LIST_SQL, [userId]);
+const list = getAccountsWithBalances;
 
 router.get('/', auth, async (req, res, next) => {
   try {

@@ -176,6 +176,10 @@ async function runMigrations() {
     `);
 
     await client.query(`
+      ALTER TABLE telegram_links ADD COLUMN IF NOT EXISTS last_expense_ids INTEGER[];
+    `);
+
+    await client.query(`
       CREATE TABLE IF NOT EXISTS ai_parse_cache (
         id           SERIAL PRIMARY KEY,
         cache_key    TEXT        NOT NULL UNIQUE,
