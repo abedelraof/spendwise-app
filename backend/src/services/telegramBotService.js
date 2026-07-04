@@ -5,13 +5,13 @@ const categoryModel = require('../models/categoryModel');
 const expenseModel = require('../models/expenseModel');
 const goalModel = require('../models/goalModel');
 const { parseExpenses, reviseExpenses, answerQuestion } = require('./aiService');
-const { createExpenses, getDashboardStats, getFinanceContext, getRangeStats, invalidateInsightCache } = require('./expenseService');
+const { createExpenses, getDashboardStats, getFinanceContext, getRangeStats, getCategoryBreakdown, invalidateInsightCache } = require('./expenseService');
 const { matchOrCreateCategory } = require('./categoryService');
 const accountService = require('./accountService');
 const ratesService = require('./ratesService');
 const budgetService = require('./budgetService');
 const { generateMonthlyInsight } = require('./insightService');
-const { yesterdayISO, todayISO } = require('../utils/dateUtils');
+const { yesterdayISO, todayISO, getMonthRange } = require('../utils/dateUtils');
 
 const DIGEST_VALUES = ['daily', 'weekly', 'off'];
 
@@ -134,6 +134,25 @@ function formatStatsRange(label, stats, currency, days) {
 Spent: ${fmtAmount(stats.total)} ${currency}
 Top category: ${stats.topCategory ?? 'N/A'}
 Transactions: ${stats.transactionCount}${avgLine}`;
+}
+
+function formatCategoryBreakdown(breakdown, currency) {
+  if (!breakdown.length) return '';
+  const lines = breakdown.map(b => `${b.category ?? 'Uncategorized'}: ${fmtAmount(b.total)} ${currency} (${b.percentage}%)`);
+  return `\n\n📂 By Category\n${lines.join('\n')}`;
+}
+
+function formatMonthlyBudgetLine(totalThisMonth, capInfo, currency) {
+  if (capInfo?.cap == null) {
+    return `\n\nYou haven't set a monthly budget cap yet — add one from Planning in the app.`;
+  }
+  const pct = capInfo.cap > 0 ? Math.round((totalThisMonth / capInfo.cap) * 100) : 0;
+  const emoji = pct >= 100 ? '🔴' : pct >= 80 ? '🟠' : '🟢';
+  const remaining = capInfo.cap - totalThisMonth;
+  const remainingLine = remaining >= 0
+    ? `${fmtAmount(remaining)} ${currency} remaining`
+    : `${fmtAmount(Math.abs(remaining))} ${currency} over budget`;
+  return `\n\n${emoji} You've spent ${fmtAmount(totalThisMonth)} out of your ${fmtAmount(capInfo.cap)} ${currency} monthly budget (${pct}%) — ${remainingLine}.`;
 }
 
 function formatBudgets(budgets, currency, capInfo) {
@@ -269,29 +288,43 @@ function createBot() {
     if (!user) return ctx.reply(NOT_LINKED_MSG);
 
     const arg = ctx.message.text.replace(/^\/stats(@\S+)?\s*/i, '').trim().toLowerCase();
-
-    if (!arg || arg === 'month') {
-      const stats = await getDashboardStats(user.id);
-      return ctx.reply(formatStats(stats, user.currency));
-    }
-
-    const today = todayISO();
-    let start, end, label, days;
-    if (arg === 'today') {
-      start = end = today; label = 'Today'; days = 1;
-    } else if (arg === 'yesterday') {
-      start = end = yesterdayISO(); label = 'Yesterday'; days = 1;
-    } else if (arg === 'week') {
-      const weekAgo = new Date();
-      weekAgo.setDate(weekAgo.getDate() - 6);
-      start = weekAgo.toISOString().slice(0, 10);
-      end = today; label = 'This Week'; days = 7;
-    } else {
+    if (arg && !['month', 'today', 'yesterday', 'week'].includes(arg)) {
       return ctx.reply('Usage: /stats [today|yesterday|week|month]');
     }
 
-    const stats = await getRangeStats(user.id, start, end);
-    await ctx.reply(formatStatsRange(label, stats, user.currency, days));
+    const [dashboardStats, capInfo] = await Promise.all([
+      getDashboardStats(user.id),
+      budgetService.getMonthlyCapInfo(user.id),
+    ]);
+
+    let periodStart, periodEnd, body;
+
+    if (!arg || arg === 'month') {
+      const now = new Date();
+      ({ start: periodStart, end: periodEnd } = getMonthRange(now.getFullYear(), now.getMonth() + 1));
+      body = formatStats(dashboardStats, user.currency);
+    } else {
+      const today = todayISO();
+      let label, days;
+      if (arg === 'today') {
+        periodStart = periodEnd = today; label = 'Today'; days = 1;
+      } else if (arg === 'yesterday') {
+        periodStart = periodEnd = yesterdayISO(); label = 'Yesterday'; days = 1;
+      } else {
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 6);
+        periodStart = weekAgo.toISOString().slice(0, 10);
+        periodEnd = today; label = 'This Week'; days = 7;
+      }
+      const rangeStats = await getRangeStats(user.id, periodStart, periodEnd);
+      body = formatStatsRange(label, rangeStats, user.currency, days);
+    }
+
+    const breakdown = await getCategoryBreakdown(user.id, periodStart, periodEnd);
+    const suffix = formatCategoryBreakdown(breakdown, user.currency)
+      + formatMonthlyBudgetLine(dashboardStats.totalThisMonth, capInfo, user.currency);
+
+    await ctx.reply(body + suffix);
   });
 
   instance.command('budgets', async (ctx) => {
