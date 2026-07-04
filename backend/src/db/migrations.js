@@ -177,6 +177,7 @@ async function runMigrations() {
 
     await client.query(`
       ALTER TABLE telegram_links ADD COLUMN IF NOT EXISTS last_expense_ids INTEGER[];
+      ALTER TABLE telegram_links ADD COLUMN IF NOT EXISTS digest_frequency TEXT NOT NULL DEFAULT 'off';
     `);
 
     await client.query(`

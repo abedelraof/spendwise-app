@@ -1,13 +1,17 @@
 const { Telegraf, Markup } = require('telegraf');
-const { queryOne, execute } = require('../db/database');
+const { query, queryOne, execute } = require('../db/database');
 const userModel = require('../models/userModel');
 const categoryModel = require('../models/categoryModel');
 const expenseModel = require('../models/expenseModel');
 const goalModel = require('../models/goalModel');
 const { parseExpenses, reviseExpenses, answerQuestion } = require('./aiService');
-const { createExpenses, getDashboardStats, getFinanceContext, invalidateInsightCache } = require('./expenseService');
+const { createExpenses, getDashboardStats, getFinanceContext, getRangeStats, invalidateInsightCache } = require('./expenseService');
 const accountService = require('./accountService');
 const ratesService = require('./ratesService');
+const { generateMonthlyInsight } = require('./insightService');
+const { yesterdayISO, todayISO } = require('../utils/dateUtils');
+
+const DIGEST_VALUES = ['daily', 'weekly', 'off'];
 
 const NOT_LINKED_MSG = 'Your Telegram isn\'t connected to an ExpenseBeam account yet. Open the app → Settings → Connect Telegram to link it.';
 
@@ -21,6 +25,7 @@ const HELP_TEXT = `Here's what I can do:
 • /networth — assets minus liabilities across all accounts
 • /currency <amount> <from> [to] <to> — quick FX conversion, e.g. /currency 100 usd to egp
 • /undo — remove the expenses from your last confirmed message
+• /digest daily|weekly|off — get a proactive spending digest (you'll also get a monthly AI insight automatically)
 • /ask <question> — ask anything about your finances, e.g. /ask am I on track with my budgets?
 • /help — show this message`;
 
@@ -97,6 +102,15 @@ function formatNetWorth({ totalAssets, totalLiabilities, netWorth, homeCurrency,
 Assets: ${fmtAmount(totalAssets)} ${homeCurrency}
 Liabilities: ${fmtAmount(totalLiabilities)} ${homeCurrency}
 Net worth: ${fmtAmount(netWorth)} ${homeCurrency}${note}`;
+}
+
+function formatDigest(label, stats, currency) {
+  if (stats.transactionCount === 0) return `📅 ${label}: no expenses logged.`;
+  return `📅 ${label}
+
+Spent: ${fmtAmount(stats.total)} ${currency}
+Top category: ${stats.topCategory ?? 'N/A'}
+Transactions: ${stats.transactionCount}`;
 }
 
 const confirmKeyboard = Markup.inlineKeyboard([
@@ -253,6 +267,20 @@ function createBot() {
     await ctx.reply(`↩️ Removed ${result.rowCount} expense${result.rowCount === 1 ? '' : 's'} from your last confirmation.`);
   });
 
+  instance.command('digest', async (ctx) => {
+    const chatId = ctx.chat.id;
+    const user = await getLinkedUser(chatId);
+    if (!user) return ctx.reply(NOT_LINKED_MSG);
+
+    const arg = ctx.message.text.replace(/^\/digest(@\S+)?\s*/i, '').trim().toLowerCase();
+    if (!DIGEST_VALUES.includes(arg)) {
+      return ctx.reply('Usage: /digest daily, /digest weekly, or /digest off');
+    }
+
+    await execute('UPDATE telegram_links SET digest_frequency = $1 WHERE chat_id = $2', [arg, chatId]);
+    await ctx.reply(arg === 'off' ? 'Digest turned off.' : `You'll get a ${arg} spending digest from now on.`);
+  });
+
   instance.on('text', async (ctx) => {
     const chatId = ctx.chat.id;
     const text = ctx.message.text.trim();
@@ -316,6 +344,75 @@ function getBot() {
   return bot;
 }
 
+async function sendDailyDigests() {
+  const instance = getBot();
+  if (!instance) return;
+
+  const yesterday = yesterdayISO();
+  const rows = await query(
+    `SELECT tl.chat_id, tl.user_id, u.currency
+     FROM telegram_links tl JOIN users u ON u.id = tl.user_id
+     WHERE tl.digest_frequency = 'daily'`
+  );
+
+  for (const row of rows) {
+    try {
+      const stats = await getRangeStats(row.user_id, yesterday, yesterday);
+      await instance.telegram.sendMessage(row.chat_id, formatDigest('Yesterday', stats, row.currency));
+    } catch (err) {
+      console.error('[telegram] daily digest failed for chat', row.chat_id, err);
+    }
+  }
+}
+
+async function sendWeeklyDigests() {
+  const instance = getBot();
+  if (!instance) return;
+
+  const end = todayISO();
+  const start = new Date();
+  start.setDate(start.getDate() - 6);
+  const startISO = start.toISOString().slice(0, 10);
+
+  const rows = await query(
+    `SELECT tl.chat_id, tl.user_id, u.currency
+     FROM telegram_links tl JOIN users u ON u.id = tl.user_id
+     WHERE tl.digest_frequency = 'weekly'`
+  );
+
+  for (const row of rows) {
+    try {
+      const stats = await getRangeStats(row.user_id, startISO, end);
+      await instance.telegram.sendMessage(row.chat_id, formatDigest('This Week', stats, row.currency));
+    } catch (err) {
+      console.error('[telegram] weekly digest failed for chat', row.chat_id, err);
+    }
+  }
+}
+
+async function sendMonthlyInsights() {
+  const instance = getBot();
+  if (!instance) return;
+
+  const prevMonth = new Date();
+  prevMonth.setDate(1);
+  prevMonth.setMonth(prevMonth.getMonth() - 1);
+  const yearMonth = prevMonth.toISOString().slice(0, 7);
+
+  const rows = await query('SELECT chat_id, user_id FROM telegram_links');
+
+  for (const row of rows) {
+    try {
+      const { insight } = await generateMonthlyInsight(row.user_id, yearMonth);
+      if (insight) {
+        await instance.telegram.sendMessage(row.chat_id, `📅 Your ${yearMonth} Insight\n\n${insight}`);
+      }
+    } catch (err) {
+      console.error('[telegram] monthly insight push failed for chat', row.chat_id, err);
+    }
+  }
+}
+
 async function launch() {
   const instance = getBot();
   if (!instance) {
@@ -332,6 +429,7 @@ async function launch() {
       { command: 'networth', description: 'Assets minus liabilities' },
       { command: 'currency', description: 'Quick FX conversion' },
       { command: 'undo',     description: 'Remove your last confirmed expenses' },
+      { command: 'digest',   description: 'Set up a daily/weekly spending digest' },
       { command: 'ask',      description: 'Ask a question about your finances' },
       { command: 'help',     description: 'Show what I can do' },
     ]);
@@ -354,4 +452,4 @@ async function launch() {
   }
 }
 
-module.exports = { getBot, launch };
+module.exports = { getBot, launch, sendDailyDigests, sendWeeklyDigests, sendMonthlyInsights };

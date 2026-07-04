@@ -119,6 +119,33 @@ async function invalidateInsightCache(userId, dates = []) {
   }
 }
 
+async function getRangeStats(userId, startDate, endDate) {
+  const [total, topCat, count] = await Promise.all([
+    queryOne(
+      `SELECT COALESCE(SUM(amount * exchange_rate), 0)::float AS total
+       FROM expenses WHERE user_id = $1 AND date BETWEEN $2 AND $3`,
+      [userId, startDate, endDate]
+    ),
+    queryOne(
+      `SELECT c.name, SUM(e.amount * e.exchange_rate)::float AS total
+       FROM expenses e LEFT JOIN categories c ON e.category_id = c.id
+       WHERE e.user_id = $1 AND e.date BETWEEN $2 AND $3
+       GROUP BY e.category_id, c.name ORDER BY total DESC LIMIT 1`,
+      [userId, startDate, endDate]
+    ),
+    queryOne(
+      `SELECT COUNT(*)::int AS cnt FROM expenses WHERE user_id = $1 AND date BETWEEN $2 AND $3`,
+      [userId, startDate, endDate]
+    ),
+  ]);
+
+  return {
+    total:            parseFloat(total.total),
+    topCategory:      topCat?.name || null,
+    transactionCount: count.cnt,
+  };
+}
+
 async function getFinanceContext(userId) {
   const now = new Date();
   const { start: monthStart } = getMonthRange(now.getFullYear(), now.getMonth() + 1);
@@ -194,5 +221,5 @@ async function createExpenses(userId, expenses) {
 
 module.exports = {
   getDashboardStats, getMonthlyByCategory, getSpendingTrend, getCategoryBreakdown, getMoMComparison, getTopDays,
-  createExpenses, invalidateInsightCache, getFinanceContext,
+  createExpenses, invalidateInsightCache, getFinanceContext, getRangeStats,
 };

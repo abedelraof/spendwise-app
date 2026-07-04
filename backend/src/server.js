@@ -48,6 +48,33 @@ const PORT = process.env.PORT || 3001;
     }
   });
 
+  // Telegram daily digest — 07:00 UTC
+  cron.schedule('0 7 * * *', async () => {
+    try {
+      await telegramBotService.sendDailyDigests();
+    } catch (err) {
+      console.error('[cron] Daily digest failed', err);
+    }
+  });
+
+  // Telegram weekly digest — Sunday 20:00 UTC
+  cron.schedule('0 20 * * 0', async () => {
+    try {
+      await telegramBotService.sendWeeklyDigests();
+    } catch (err) {
+      console.error('[cron] Weekly digest failed', err);
+    }
+  });
+
+  // Telegram monthly insight push — 00:10 UTC on the 1st, for the month that just ended
+  cron.schedule('10 0 1 * *', async () => {
+    try {
+      await telegramBotService.sendMonthlyInsights();
+    } catch (err) {
+      console.error('[cron] Monthly insight push failed', err);
+    }
+  });
+
   app.listen(PORT, () => {
     console.log(`Backend running on http://localhost:${PORT}`);
   });
