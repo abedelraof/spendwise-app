@@ -2,7 +2,7 @@
 
 ## What Is This
 
-ExpenseBeam is a personal finance tracker with a React web app, a Flutter mobile app, and a marketing landing page, sharing one Express/PostgreSQL backend. It tracks expenses, income, budgets, recurring bills, multi-currency bank accounts, savings goals, and produces reports. It includes Claude AI integration for parsing natural-language expense descriptions, a "Finance Chat" Q&A assistant, and monthly AI-generated insights. It runs as a freemium product (Google Play billing) with an admin dashboard for operators.
+ExpenseBeam is a personal finance tracker with a React web app, a Flutter mobile app, a Telegram bot, and a marketing landing page, sharing one Express/PostgreSQL backend. It tracks expenses, income, budgets, recurring bills, multi-currency bank accounts, savings goals, and produces reports. It includes Claude AI integration for parsing natural-language expense descriptions, a "Finance Chat" Q&A assistant, and monthly AI-generated insights. It runs as a freemium product (Google Play billing) with an admin dashboard for operators.
 
 ---
 
@@ -15,8 +15,9 @@ ExpenseBeam is a personal finance tracker with a React web app, a Flutter mobile
 | Backend | Node.js + Express 5, **PostgreSQL** via `pg` (raw SQL, no ORM) |
 | Auth | JWT (jsonwebtoken) + bcryptjs password hashing |
 | AI | Anthropic Claude SDK (`@anthropic-ai/sdk`), server-side API key (no per-user keys) |
+| Bot | Telegram bot via `telegraf` — chat-based expense entry, stats, digests (see "Telegram Bot" section) |
 | Billing | Google Play Developer API subscription verification (freemium AI quota) |
-| Scheduler | node-cron — recurring expenses, monthly AI quota reset, subscription expiry check |
+| Scheduler | node-cron — recurring expenses, monthly AI quota reset, subscription expiry check, Telegram digests/insight push |
 | Exchange rates | open.er-api.com (1-hour cached proxy) |
 | Encryption | AES-256-GCM via Node crypto (`cryptoService.js`, currently unused by any active per-user secret) |
 | Deployment | Docker Compose (Postgres + Node backend + Caddy-served frontend), auto-SSL |
@@ -40,6 +41,11 @@ ANTHROPIC_API_KEY=<server-side Claude key>
 GOOGLE_SERVICE_ACCOUNT_JSON=<service account JSON, single line>
 GOOGLE_PLAY_PACKAGE=com.expensebeam.expensebeam_mobile
 GOOGLE_PLAY_SUBSCRIPTION_ID=expensebeam_pro_monthly
+# Optional, only needed for the Telegram bot (leave blank to disable it entirely):
+TELEGRAM_BOT_TOKEN=<token from @BotFather>
+TELEGRAM_BOT_USERNAME=<bot username, e.g. expensebeam_bot>
+TELEGRAM_WEBHOOK_SECRET=<random string, used as a secret path segment>
+TELEGRAM_MODE=polling   # optional, local-dev only — omit/anything else means "webhook" (needs a public HTTPS DOMAIN)
 ```
 
 Production uses Docker Compose with `DOMAIN` and `DB_PASSWORD` — see the "Deployment" section below.
@@ -65,7 +71,8 @@ D:\FlutterApp\
 │       │   ├── userModel.js
 │       │   ├── categoryModel.js
 │       │   ├── subcategoryModel.js
-│       │   └── expenseModel.js
+│       │   ├── expenseModel.js
+│       │   └── goalModel.js          ← findByUser() — goal + linked account + latest balance join
 │       ├── routes/
 │       │   ├── auth.js         ← POST /login, POST /signup (response includes is_admin)
 │       │   ├── settings.js     ← GET/PUT /settings, POST /settings/clear-data ("Danger Zone")
@@ -79,22 +86,27 @@ D:\FlutterApp\
 │       │   ├── goals.js        ← CRUD /goals (savings goals)
 │       │   ├── reports.js      ← GET /reports/* (trend, breakdown, topDays, export)
 │       │   ├── ai.js           ← POST /ai/parse, POST /ai/ask (both quota-gated + cached)
-│       │   ├── insights.js     ← Monthly AI insight generation
+│       │   ├── insights.js     ← GET /insights/monthly — thin wrapper over insightService.generateMonthlyInsight
 │       │   ├── subscription.js ← GET /subscription, POST /subscription/verify (Google Play)
 │       │   ├── admin.js        ← GET /admin/stats, /admin/users, /admin/users/:id (adminAuth-gated)
 │       │   ├── seed.js         ← POST /seed — generates demo data for a fresh account
-│       │   ├── rates.js        ← GET /rates?base=X (cached exchange rates)
+│       │   ├── rates.js        ← GET /rates?base=X — thin wrapper over ratesService.getRates
 │       │   ├── search.js       ← GET /search?q=
-│       │   └── import.js       ← POST /import/csv
+│       │   ├── import.js       ← POST /import/csv
+│       │   └── telegramLink.js ← GET/POST/DELETE /telegram-link — web-side linking-code flow for the bot
 │       ├── services/
-│       │   ├── aiService.js          ← Claude calls: parseExpenses(), answerQuestion() (Finance Chat), insights
-│       │   ├── expenseService.js     ← getDashboardStats (incomeThisMonth included)
+│       │   ├── aiService.js          ← Claude calls: parseExpenses(), reviseExpenses(), answerQuestion() (Finance Chat), generateInsight()
+│       │   ├── expenseService.js     ← getDashboardStats, getRangeStats (arbitrary date range), getFinanceContext, createExpenses (shared insert path)
+│       │   ├── insightService.js     ← generateMonthlyInsight() — extracted from routes/insights.js, uses server-side ANTHROPIC_API_KEY
+│       │   ├── accountService.js     ← getAccountsWithBalances(), getNetWorth() (shared by routes/accounts.js and the bot's /networth)
+│       │   ├── ratesService.js       ← getRates() — in-memory 1h cache + open.er-api.com fetch, shared by routes/rates.js and the bot
 │       │   ├── categoryService.js    ← find-or-create category by name
 │       │   ├── budgetService.js      ← budget limit checks
 │       │   ├── recurringService.js   ← processOverdue() → inserts expenses + advances dates
+│       │   ├── telegramBotService.js ← Telegraf bot: linking, expense parse/revise/confirm, all bot commands, proactive sends (see "Telegram Bot" section)
 │       │   └── cryptoService.js      ← encrypt()/decrypt() AES-256-GCM (legacy; not wired to any route now)
 │       └── utils/
-│           ├── dateUtils.js    ← todayISO(), addInterval(), getMonthRange()
+│           ├── dateUtils.js    ← todayISO(), yesterdayISO(), addInterval(), getMonthRange()
 │           └── csvExport.js    ← expenses → CSV string
 ├── frontend/
 │   └── src/
@@ -108,7 +120,7 @@ D:\FlutterApp\
 │       ├── api/                ← thin wrappers: each file = one backend route group
 │       │   ├── authApi.js, expensesApi.js, categoriesApi.js, budgetsApi.js, recurringApi.js,
 │       │   ├── reportsApi.js, accountsApi.js (+ account groups), incomeApi.js, goalsApi.js,
-│       │   ├── aiApi.js (parse + askQuestion), settingsApi.js, adminApi.js, seedApi.js
+│       │   ├── aiApi.js (parse + askQuestion), settingsApi.js, adminApi.js, seedApi.js, telegramApi.js
 │       ├── pages/
 │       │   ├── Dashboard.jsx        ← Stats, AI input, Finance Chat, latest transactions, budget alerts, upcoming bills
 │       │   ├── Transactions.jsx     ← Tabs: Expenses table (filterable, paginated) + Recurring (moved here, no longer its own nav item)
@@ -118,7 +130,7 @@ D:\FlutterApp\
 │       │   ├── RecordBalances.jsx   ← `/app/accounts/record` — bulk balance-snapshot entry flow for all accounts at once
 │       │   ├── Planning.jsx         ← Merges Budgets (BudgetManager) + Savings Goals into one screen
 │       │   ├── Income.jsx           ← Income entries, filters, source badges
-│       │   ├── Settings.jsx         ← Preferences, categories, budgets, CSV import, Danger Zone (clear-data)
+│       │   ├── Settings.jsx         ← Preferences, Telegram linking, categories, budgets, CSV import, Danger Zone (clear-data)
 │       │   ├── Admin.jsx            ← Admin stats dashboard (visible only if user.is_admin === 1)
 │       │   ├── AdminUsers.jsx       ← Admin: paginated user list
 │       │   ├── AdminUserDetail.jsx  ← Admin: single user detail/drilldown
@@ -132,7 +144,7 @@ D:\FlutterApp\
 │           ├── dashboard/        StatsBar.jsx, StatCard.jsx, ExpenseInputPanel.jsx, ParsedExpenseConfirm.jsx,
 │           │                     LatestTransactions.jsx, BudgetAlerts.jsx, MonthlyInsight.jsx, UpcomingBills.jsx,
 │           │                     FinanceChat.jsx (natural-language Q&A over the user's finances, markdown+GFM tables)
-│           └── settings/         CategoriesManager.jsx, BudgetManager.jsx, CsvImport.jsx
+│           └── settings/         CategoriesManager.jsx, BudgetManager.jsx, CsvImport.jsx, TelegramConnect.jsx (linking-code UI, polls GET /telegram-link)
 ├── expensebeam_mobile/          ← Flutter app mirroring most web screens, talks to the same backend API
 │   └── lib/
 │       ├── main.dart
@@ -213,6 +225,19 @@ incomes (
 ai_parse_cache (id, cache_key UNIQUE, response_json, created_at)
 -- 24h SHA-256(userId:text) cache for /ai/parse and /ai/ask responses; cached hits don't count against quota
 -- INDEX: (cache_key)
+
+telegram_links (
+  id, user_id UNIQUE, chat_id UNIQUE,
+  last_expense_ids INTEGER[],    -- IDs from the most recent /confirm in that chat, for /undo (NULL after undo)
+  digest_frequency,              -- 'off' | 'daily' | 'weekly', set via the /digest command
+  linked_at
+)
+
+telegram_link_codes (id, user_id UNIQUE, code UNIQUE, expires_at, created_at)
+-- one-time 6-digit code from Settings → Connect Telegram, 10-minute TTL, consumed by /start <code>
+
+telegram_sessions (chat_id PRIMARY KEY → telegram_links, pending_expenses JSONB, updated_at)
+-- current unconfirmed parsed expense list per chat, cleared on confirm/cancel
 ```
 
 ---
@@ -242,9 +267,9 @@ ai_parse_cache (id, cache_key UNIQUE, response_json, created_at)
 - Response is markdown, rendered with `react-markdown` + `remark-gfm` (so tables render correctly)
 
 ### Monthly Insights (AI)
-- `MonthlyInsight` component on Dashboard calls `GET /api/ai/insights`
-- `insights.js` route checks if an insight for the current month already exists in `monthly_insights`
-- If not, calls Claude with spending data → stores result → returns markdown text
+- `MonthlyInsight` component on Dashboard calls `GET /api/insights/monthly`
+- `insightService.generateMonthlyInsight(userId, yearMonth)` checks if an insight for that month already exists in `monthly_insights`; if not, calls Claude (server-side key) with spending data, stores it, returns `{ insight, cached }`
+- Also called directly by the Telegram monthly-insight-push cron (see below) — this is the single shared code path for both surfaces
 
 ### Exchange Rates
 - `GET /api/rates?base=EGP` (or any currency)
@@ -274,6 +299,15 @@ ai_parse_cache (id, cache_key UNIQUE, response_json, created_at)
 - Gated by `users.is_admin = 1`; `middleware/adminAuth.js` enforces it server-side, `Sidebar.jsx` only renders the nav link client-side when `user.is_admin === 1`
 - `GET /api/admin/stats` — total/new/active users, expense & income totals, account count, users with a (legacy) API key set, signups by month
 - `GET /api/admin/users`, `GET /api/admin/users/:id`, `DELETE /api/admin/users/:id` — user list/detail/removal
+
+### Telegram Bot
+- Fully optional (no-op if `TELEGRAM_BOT_TOKEN` is unset): `telegramBotService.getBot()` returns `null`, `launch()` logs and returns early.
+- **Linking**: web Settings → Telegram → "Connect Telegram" (`POST /api/telegram-link`) generates a 6-digit code (`telegram_link_codes`, 10-min TTL). User sends `/start <code>` to the bot (or taps the `t.me/<username>?start=<code>` deep link) → bot verifies the code, upserts `telegram_links` (one row per user, one per chat_id), deletes the code. `TelegramConnect.jsx` polls `GET /api/telegram-link` every few seconds to flip the UI to "Connected" automatically.
+- **Expense entry**: any text message from a linked chat with no pending session → `aiService.parseExpenses()`; with a pending session (`telegram_sessions`) → `aiService.reviseExpenses()` (sends the pending list + the new message to Claude so it can apply corrections like "actually lunch was 150"). Either way the bot replies with the list (amount/date/category per line) and an inline `[✅ Confirm] [❌ Cancel]` keyboard. Confirm calls `expenseService.createExpenses()` — the same function `POST /api/expenses` uses — and stores the new expense IDs in `telegram_links.last_expense_ids`.
+- **AI usage is unmetered for the bot**: unlike `/api/ai/parse`/`/ask` (gated by `enforceAiQuota`), all bot AI calls pass `null` for the API key (server-side `ANTHROPIC_API_KEY`) and skip quota/plan checks entirely — a deliberate product decision, not an oversight.
+- **Pull commands** (all require a linked account): `/stats [today|yesterday|week|month]`, `/budgets`, `/recent`, `/goals`, `/networth`, `/currency <amount> <from> [to] <to>`, `/undo` (deletes the exact batch in `last_expense_ids`, then clears it — one-shot, not a general history undo), `/ask <question>` (same context-builder as Finance Chat, via `expenseService.getFinanceContext`), `/help`.
+- **Proactive sends** (cron in `server.js`, all fixed UTC times — there is no per-user timezone anywhere in the app): daily digest 07:00 UTC (`sendDailyDigests`, `digest_frequency = 'daily'`, summarizes yesterday), weekly digest Sunday 20:00 UTC (`sendWeeklyDigests`, `digest_frequency = 'weekly'`, rolling last 7 days), monthly insight push 00:10 UTC on the 1st (`sendMonthlyInsights`, **every** linked user regardless of digest opt-in, calls `insightService.generateMonthlyInsight` for the month that just ended). Opt into digests with `/digest daily|weekly|off`; each proactive send loops per-user with its own try/catch so one failure (e.g. a user who blocked the bot) doesn't stop the batch.
+- **Transport**: webhook in production (`bot.webhookCallback()` mounted in `app.js` *before* `express.json()` — Telegraf needs to own that route's body parsing — at `/api/telegram/webhook/<TELEGRAM_WEBHOOK_SECRET>`), registered via `setWebhook()` in `launch()`. Set `TELEGRAM_MODE=polling` for local dev (no public URL needed); production always uses the webhook.
 
 ### Demo Data Seeding
 - `POST /api/seed` — one-shot demo data generator for a fresh account (8 categories/subcategories, 4 accounts with balance history, ~40 expenses, income, budgets, recurring bills, 2 savings goals). Refuses to run if the user already has expenses; `Settings.jsx` "Danger Zone" → `POST /api/settings/clear-data` wipes a user's data so seeding can be re-run.
@@ -367,6 +401,19 @@ ai_parse_cache (id, cache_key UNIQUE, response_json, created_at)
 | POST | `/parse` | Natural language → expense array. 403 `pro_required` (free plan) / 429 `quota_exceeded` |
 | POST | `/ask` | Finance Chat: free-form question + financial context → markdown answer |
 
+### Insights — `/api/insights`
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/monthly?yearMonth=YYYY-MM&force=true` | AI insight for the month (default: current), cached in `monthly_insights` unless `force` |
+| DELETE | `/monthly/cache?yearMonth=YYYY-MM` | Clear the cached insight so it regenerates next call |
+
+### Telegram Link — `/api/telegram-link` (web-side, used by Settings → Connect Telegram)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/` | `{ linked, linked_at }` for the current user |
+| POST | `/` | Generate a 10-min linking code → `{ code, expires_at, deep_link }` |
+| DELETE | `/` | Disconnect (removes the `telegram_links` row) |
+
 ### Subscription — `/api/subscription`
 | Method | Path | Description |
 |--------|------|-------------|
@@ -423,7 +470,7 @@ ai_parse_cache (id, cache_key UNIQUE, response_json, created_at)
 
 ## Deployment
 
-Production runs via Docker Compose on a single host (`expensebeam.com`): a `postgres:16-alpine` container, a Node backend container, and a Caddy-based frontend container that serves the React build and reverse-proxies `/api/*` to the backend with automatic SSL. `docker-compose.yml` derives `DATABASE_URL` from `DB_PASSWORD`; `JWT_SECRET`, `DOMAIN`, and `DB_PASSWORD` come from a server-side `.env`. DB migrations run automatically on backend startup (`IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`, safe to run every deploy). Full deploy commands, SSH details, and secrets are tracked outside this repo — ask if you need them.
+Production runs via Docker Compose on a single host (`expensebeam.com`): a `postgres:16-alpine` container, a Node backend container, and a Caddy-based frontend container that serves the React build and reverse-proxies `/api/*` to the backend with automatic SSL. `docker-compose.yml` derives `DATABASE_URL` from `DB_PASSWORD` and passes through `ANTHROPIC_API_KEY`, `DOMAIN`, `TELEGRAM_BOT_TOKEN`/`TELEGRAM_BOT_USERNAME`/`TELEGRAM_WEBHOOK_SECRET`, and the Google Play vars from the server's `.env` (`/root/expensebeam/.env`, not tracked in git — ask if you need to inspect/edit it). DB migrations run automatically on backend startup (`IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`, safe to run every deploy). Most deploys touch only `backend/` — the usual cycle is `git push` → SSH in → `git pull && docker compose build backend && docker compose up -d backend`, then check `docker compose logs backend --tail=15` for `[telegram] Webhook registered` and no migration errors. Frontend changes additionally need `docker compose build frontend && docker compose up -d frontend`. Full SSH details are tracked outside this repo — ask if you need them.
 
 ---
 
@@ -460,3 +507,9 @@ Production runs via Docker Compose on a single host (`expensebeam.com`): a `post
 15. **`landing/` is a separate static site**: not part of the React SPA build and not wired into `docker-compose.yml`/Caddy; treat it as a standalone marketing page.
 
 16. **`.worktrees/ui-variants`**: an active git worktree (separate branch, separate checkout) experimenting with visual styles for the expense-entry flow. Changes there don't affect `master` until merged — don't assume edits under `.worktrees/` are live in the main app.
+
+17. **Shared service extraction pattern**: whenever a piece of logic is needed by both an HTTP route and the Telegram bot, it gets pulled into a service/model function both call — `expenseService.createExpenses`/`getFinanceContext`/`getRangeStats`, `insightService.generateMonthlyInsight`, `accountService.getAccountsWithBalances`/`getNetWorth`, `ratesService.getRates`, `goalModel.findByUser`. Follow this pattern for new cross-surface features rather than duplicating a query inline in `telegramBotService.js`.
+
+18. **The monthly-insight `claude_api_key` bug**: until it was fixed, `routes/insights.js` checked the legacy per-user `users.claude_api_key` field (see gotcha #12) and 402'd for every real user, since that field has been unused since the freemium migration. `insightService.generateMonthlyInsight` now correctly uses the server-side key like everything else. If you see other code still branching on `claude_api_key`/`hasApiKey`, treat it as dead and suspect, not intentional.
+
+19. **Telegram bot AI calls bypass the freemium quota entirely**: a deliberate decision — `enforceAiQuota` in `routes/ai.js` only gates the `/api/ai/*` HTTP routes. `telegramBotService.js` never checks `plan` or `ai_used_this_month`; every linked user gets unlimited parsing/revision/`/ask`/monthly insights regardless of free/pro status. Don't "fix" this without checking — it's intentional, not an oversight (unlike gotcha #18).
