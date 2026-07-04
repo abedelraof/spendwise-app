@@ -6,6 +6,7 @@ const expenseModel = require('../models/expenseModel');
 const goalModel = require('../models/goalModel');
 const { parseExpenses, reviseExpenses, answerQuestion } = require('./aiService');
 const { createExpenses, getDashboardStats, getFinanceContext, getRangeStats, invalidateInsightCache } = require('./expenseService');
+const { matchOrCreateCategory } = require('./categoryService');
 const accountService = require('./accountService');
 const ratesService = require('./ratesService');
 const budgetService = require('./budgetService');
@@ -45,6 +46,72 @@ function formatExpenseList(expenses, currency) {
   });
   const total = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
   return `Here's what I parsed:\n\n${lines.join('\n')}\n\nTotal: ${fmtAmount(total)} ${currency}\n\nConfirm, or send another message to correct anything.`;
+}
+
+function findExistingCategory(categories, name) {
+  return categories.find(c => c.name.toLowerCase() === (name || '').trim().toLowerCase());
+}
+
+// Diffs the AI-parsed expenses against the user's existing categories/subcategories
+// and returns the de-duped list of ones that don't exist yet.
+function detectNewCategories(expenses, categories) {
+  const suggestions = [];
+  const seen = new Set();
+
+  for (const e of expenses) {
+    const existingCat = findExistingCategory(categories, e.category);
+    if (!existingCat) {
+      const key = `cat:${(e.category || '').trim().toLowerCase()}`;
+      if (!seen.has(key) && (e.category || '').trim()) {
+        seen.add(key);
+        suggestions.push({ category: e.category.trim(), subcategory: e.subcategory?.trim() || null, isNewCategory: true });
+      }
+      continue;
+    }
+    if (e.subcategory?.trim()) {
+      const existingSub = (existingCat.subcategories || []).find(s => s.name.toLowerCase() === e.subcategory.trim().toLowerCase());
+      if (!existingSub) {
+        const key = `sub:${existingCat.name.toLowerCase()}:${e.subcategory.trim().toLowerCase()}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          suggestions.push({ category: existingCat.name, subcategory: e.subcategory.trim(), isNewCategory: false });
+        }
+      }
+    }
+  }
+  return suggestions;
+}
+
+function formatCategorySuggestions(suggestions) {
+  const lines = suggestions.map(s => {
+    if (s.isNewCategory) {
+      return s.subcategory ? `🆕 ${s.category} → ${s.subcategory} (new category)` : `🆕 ${s.category} (new category)`;
+    }
+    return `🆕 ${s.category} → ${s.subcategory} (new subcategory)`;
+  });
+  const plural = suggestions.length > 1;
+  return `I don't see ${plural ? 'these' : 'this'} in your categories yet:\n\n${lines.join('\n')}\n\nCreate ${plural ? 'them' : 'it'} and continue with the expenses below, or cancel to keep using only your existing categories.`;
+}
+
+// Reassigns expenses that referenced rejected new categories/subcategories back onto
+// the user's existing ones, so nothing gets created when the suggestion is cancelled.
+function remapToExistingCategories(expenses, categories, suggestions) {
+  const newCatNames = new Set(suggestions.filter(s => s.isNewCategory).map(s => s.category.toLowerCase()));
+  const newSubKeys = new Set(
+    suggestions.filter(s => !s.isNewCategory).map(s => `${s.category.toLowerCase()}:${s.subcategory.toLowerCase()}`)
+  );
+  const fallback = categories.find(c => ['other', 'others'].includes(c.name.toLowerCase())) || categories[0];
+
+  return expenses.map(e => {
+    if (newCatNames.has((e.category || '').trim().toLowerCase())) {
+      return { ...e, category: fallback ? fallback.name : e.category, subcategory: '' };
+    }
+    const subKey = `${(e.category || '').trim().toLowerCase()}:${(e.subcategory || '').trim().toLowerCase()}`;
+    if (e.subcategory?.trim() && newSubKeys.has(subKey)) {
+      return { ...e, subcategory: '' };
+    }
+    return e;
+  });
 }
 
 function formatStats(stats, currency) {
@@ -141,6 +208,11 @@ const confirmKeyboard = Markup.inlineKeyboard([
   Markup.button.callback('❌ Cancel', 'cancel_expenses'),
 ]);
 
+const newCategoryKeyboard = Markup.inlineKeyboard([
+  Markup.button.callback('✅ Confirm', 'confirm_new_categories'),
+  Markup.button.callback('❌ Cancel', 'cancel_new_categories'),
+]);
+
 async function getLinkedUser(chatId) {
   const link = await queryOne('SELECT user_id FROM telegram_links WHERE chat_id = $1', [chatId]);
   if (!link) return null;
@@ -148,15 +220,15 @@ async function getLinkedUser(chatId) {
 }
 
 async function getSession(chatId) {
-  return queryOne('SELECT pending_expenses FROM telegram_sessions WHERE chat_id = $1', [chatId]);
+  return queryOne('SELECT pending_expenses, pending_new_categories FROM telegram_sessions WHERE chat_id = $1', [chatId]);
 }
 
-async function saveSession(chatId, expenses) {
+async function saveSession(chatId, expenses, newCategories = null) {
   await execute(
-    `INSERT INTO telegram_sessions (chat_id, pending_expenses, updated_at)
-     VALUES ($1, $2, NOW())
-     ON CONFLICT (chat_id) DO UPDATE SET pending_expenses = EXCLUDED.pending_expenses, updated_at = NOW()`,
-    [chatId, JSON.stringify(expenses)]
+    `INSERT INTO telegram_sessions (chat_id, pending_expenses, pending_new_categories, updated_at)
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (chat_id) DO UPDATE SET pending_expenses = EXCLUDED.pending_expenses, pending_new_categories = EXCLUDED.pending_new_categories, updated_at = NOW()`,
+    [chatId, JSON.stringify(expenses), newCategories ? JSON.stringify(newCategories) : null]
   );
 }
 
@@ -354,8 +426,49 @@ function createBot() {
       return ctx.reply('I couldn\'t find any expenses in that message — try again with something like "coffee 45, lunch 120".');
     }
 
+    const suggestions = detectNewCategories(expenses, categories);
+    if (suggestions.length) {
+      await saveSession(chatId, expenses, suggestions);
+      return ctx.reply(formatCategorySuggestions(suggestions), newCategoryKeyboard);
+    }
+
     await saveSession(chatId, expenses);
     await ctx.reply(formatExpenseList(expenses, user.currency), confirmKeyboard);
+  });
+
+  instance.action('confirm_new_categories', async (ctx) => {
+    const chatId = ctx.chat.id;
+    const user = await getLinkedUser(chatId);
+    const session = await getSession(chatId);
+    await ctx.answerCbQuery();
+
+    if (!user || !session?.pending_new_categories?.length) {
+      return ctx.editMessageText('This plan has expired. Send a new message to start over.');
+    }
+
+    for (const s of session.pending_new_categories) {
+      await matchOrCreateCategory(user.id, s.category, s.subcategory || null);
+    }
+
+    await saveSession(chatId, session.pending_expenses);
+    await ctx.editMessageText(formatExpenseList(session.pending_expenses, user.currency), confirmKeyboard);
+  });
+
+  instance.action('cancel_new_categories', async (ctx) => {
+    const chatId = ctx.chat.id;
+    const user = await getLinkedUser(chatId);
+    const session = await getSession(chatId);
+    await ctx.answerCbQuery();
+
+    if (!user || !session?.pending_new_categories?.length) {
+      return ctx.editMessageText('This plan has expired. Send a new message to start over.');
+    }
+
+    const categories = await categoryModel.findByUser(user.id);
+    const remapped = remapToExistingCategories(session.pending_expenses, categories, session.pending_new_categories);
+
+    await saveSession(chatId, remapped);
+    await ctx.editMessageText(formatExpenseList(remapped, user.currency), confirmKeyboard);
   });
 
   instance.action('confirm_expenses', async (ctx) => {

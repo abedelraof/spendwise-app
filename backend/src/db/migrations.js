@@ -215,6 +215,8 @@ async function runMigrations() {
         pending_expenses JSONB NOT NULL,
         updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+
+      ALTER TABLE telegram_sessions ADD COLUMN IF NOT EXISTS pending_new_categories JSONB;
     `);
 
     console.log('[migrations] Schema up to date');
