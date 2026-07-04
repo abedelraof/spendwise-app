@@ -18,7 +18,7 @@ const NOT_LINKED_MSG = 'Your Telegram isn\'t connected to an ExpenseBeam account
 const HELP_TEXT = `Here's what I can do:
 
 • Just send a message like "coffee 45, lunch 120" and I'll parse it into expenses for you to confirm.
-• /stats — this month's spending summary
+• /stats [today|yesterday|week|month] — spending summary
 • /budgets — budget status for this month
 • /recent — your last few expenses
 • /goals — savings goal progress
@@ -56,6 +56,16 @@ Cash flow: ${cashFlow >= 0 ? '+' : ''}${fmtAmount(cashFlow)} ${currency}
 Top category: ${stats.topCategory ?? 'N/A'}
 Daily average: ${fmtAmount(stats.dailyAverage)} ${currency}
 Transactions: ${stats.transactionCount}`;
+}
+
+function formatStatsRange(label, stats, currency, days) {
+  if (stats.transactionCount === 0) return `📊 ${label}: no expenses logged.`;
+  const avgLine = days > 1 ? `\nDaily average: ${fmtAmount(stats.total / days)} ${currency}` : '';
+  return `📊 ${label}
+
+Spent: ${fmtAmount(stats.total)} ${currency}
+Top category: ${stats.topCategory ?? 'N/A'}
+Transactions: ${stats.transactionCount}${avgLine}`;
 }
 
 function formatBudgets(budgets, currency) {
@@ -172,8 +182,31 @@ function createBot() {
   instance.command('stats', async (ctx) => {
     const user = await getLinkedUser(ctx.chat.id);
     if (!user) return ctx.reply(NOT_LINKED_MSG);
-    const stats = await getDashboardStats(user.id);
-    await ctx.reply(formatStats(stats, user.currency));
+
+    const arg = ctx.message.text.replace(/^\/stats(@\S+)?\s*/i, '').trim().toLowerCase();
+
+    if (!arg || arg === 'month') {
+      const stats = await getDashboardStats(user.id);
+      return ctx.reply(formatStats(stats, user.currency));
+    }
+
+    const today = todayISO();
+    let start, end, label, days;
+    if (arg === 'today') {
+      start = end = today; label = 'Today'; days = 1;
+    } else if (arg === 'yesterday') {
+      start = end = yesterdayISO(); label = 'Yesterday'; days = 1;
+    } else if (arg === 'week') {
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 6);
+      start = weekAgo.toISOString().slice(0, 10);
+      end = today; label = 'This Week'; days = 7;
+    } else {
+      return ctx.reply('Usage: /stats [today|yesterday|week|month]');
+    }
+
+    const stats = await getRangeStats(user.id, start, end);
+    await ctx.reply(formatStatsRange(label, stats, user.currency, days));
   });
 
   instance.command('budgets', async (ctx) => {
