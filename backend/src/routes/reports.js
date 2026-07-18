@@ -3,8 +3,31 @@ const auth = require('../middleware/auth');
 const expenseModel = require('../models/expenseModel');
 const expenseService = require('../services/expenseService');
 const { toCsv } = require('../utils/csvExport');
-const { todayISO, getMonthRange } = require('../utils/dateUtils');
+const { todayISO, getMonthRange, resolvePeriod } = require('../utils/dateUtils');
 const { query } = require('../db/database');
+const userModel = require('../models/userModel');
+const reportService = require('../services/reportService');
+const { renderReportHtml } = require('../services/reportTemplate');
+
+// The same report card the Telegram bot's /report sends, as a PNG. Also gives
+// the web/mobile clients the feature, and ?debug=html turns template iteration
+// into a browser refresh instead of a container rebuild.
+router.get('/report.png', auth, async (req, res, next) => {
+  try {
+    const period = resolvePeriod(req.query.period);
+    if (!period) return res.status(400).json({ error: 'Invalid period. Use today, yesterday, week or month.' });
+
+    const user = await userModel.findById(req.user.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    if (req.query.debug === 'html' && process.env.NODE_ENV !== 'production') {
+      return res.type('html').send(renderReportHtml(await reportService.buildReportData(user, period)));
+    }
+
+    const png = await reportService.generateReportPng(user, period);
+    res.type('png').send(png);
+  } catch (err) { next(err); }
+});
 
 router.get('/dashboard-stats', auth, async (req, res, next) => {
   try {

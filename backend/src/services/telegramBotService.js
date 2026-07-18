@@ -10,8 +10,9 @@ const { matchOrCreateCategory } = require('./categoryService');
 const accountService = require('./accountService');
 const ratesService = require('./ratesService');
 const budgetService = require('./budgetService');
+const reportService = require('./reportService');
 const { generateMonthlyInsight } = require('./insightService');
-const { yesterdayISO, todayISO, getMonthRange } = require('../utils/dateUtils');
+const { yesterdayISO, todayISO, resolvePeriod } = require('../utils/dateUtils');
 
 const DIGEST_VALUES = ['daily', 'weekly', 'off'];
 
@@ -21,6 +22,7 @@ const HELP_TEXT = `Here's what I can do:
 
 • Just send a message like "coffee 45, lunch 120" and I'll parse it into expenses for you to confirm.
 • /stats [today|yesterday|week|month] — spending summary
+• /report [today|yesterday|week|month] — a full visual report card as an image
 • /budgets — budget status for this month
 • /recent — your last few expenses
 • /goals — savings goal progress
@@ -222,6 +224,25 @@ Top category: ${stats.topCategory ?? 'N/A'}
 Transactions: ${stats.transactionCount}`;
 }
 
+// The full text body of /stats for an already-resolved period. Shared with
+// /report, which falls back to it when image rendering fails.
+async function buildStatsText(user, period) {
+  const [dashboardStats, capInfo] = await Promise.all([
+    getDashboardStats(user.id),
+    budgetService.getMonthlyCapInfo(user.id),
+  ]);
+
+  const body = period.isMonth
+    ? formatStats(dashboardStats, user.currency)
+    : formatStatsRange(period.label, await getRangeStats(user.id, period.start, period.end), user.currency, period.days);
+
+  const breakdown = await getCategoryBreakdown(user.id, period.start, period.end);
+
+  return body
+    + formatCategoryBreakdown(breakdown, user.currency)
+    + formatMonthlyBudgetLine(dashboardStats.totalThisMonth, capInfo, user.currency);
+}
+
 const confirmKeyboard = Markup.inlineKeyboard([
   Markup.button.callback('✅ Confirm', 'confirm_expenses'),
   Markup.button.callback('❌ Cancel', 'cancel_expenses'),
@@ -288,43 +309,42 @@ function createBot() {
     if (!user) return ctx.reply(NOT_LINKED_MSG);
 
     const arg = ctx.message.text.replace(/^\/stats(@\S+)?\s*/i, '').trim().toLowerCase();
-    if (arg && !['month', 'today', 'yesterday', 'week'].includes(arg)) {
-      return ctx.reply('Usage: /stats [today|yesterday|week|month]');
+    const period = resolvePeriod(arg);
+    if (!period) return ctx.reply('Usage: /stats [today|yesterday|week|month]');
+
+    await ctx.reply(await buildStatsText(user, period));
+  });
+
+  instance.command('report', async (ctx) => {
+    const user = await getLinkedUser(ctx.chat.id);
+    if (!user) return ctx.reply(NOT_LINKED_MSG);
+
+    const arg = ctx.message.text.replace(/^\/report(@\S+)?\s*/i, '').trim().toLowerCase();
+    const period = resolvePeriod(arg);
+    if (!period) return ctx.reply('Usage: /report [today|yesterday|week|month]');
+
+    // Telegram clears a chat action after ~5s, so refresh it until we're done.
+    // The catch matters: if the user blocks the bot mid-render, an unhandled
+    // rejection from the timer would take the process down.
+    await ctx.sendChatAction('upload_photo').catch(() => {});
+    const ticker = setInterval(() => { ctx.sendChatAction('upload_photo').catch(() => {}); }, 4000);
+
+    try {
+      const png = await reportService.generateReportPng(user, period);
+      await ctx.replyWithPhoto(
+        { source: png },
+        { caption: `📊 ${period.label} report · ${period.start} – ${period.end}` }
+      );
+    } catch (err) {
+      // Chromium missing, launch denied, render timeout, OOM — all land here and
+      // degrade to the existing /stats text rather than to an error.
+      console.error('[telegram] /report render failed:', err);
+      await ctx.reply(
+        `I couldn't render the report image just now — here's the text version instead.\n\n${await buildStatsText(user, period)}`
+      );
+    } finally {
+      clearInterval(ticker);
     }
-
-    const [dashboardStats, capInfo] = await Promise.all([
-      getDashboardStats(user.id),
-      budgetService.getMonthlyCapInfo(user.id),
-    ]);
-
-    let periodStart, periodEnd, body;
-
-    if (!arg || arg === 'month') {
-      const now = new Date();
-      ({ start: periodStart, end: periodEnd } = getMonthRange(now.getFullYear(), now.getMonth() + 1));
-      body = formatStats(dashboardStats, user.currency);
-    } else {
-      const today = todayISO();
-      let label, days;
-      if (arg === 'today') {
-        periodStart = periodEnd = today; label = 'Today'; days = 1;
-      } else if (arg === 'yesterday') {
-        periodStart = periodEnd = yesterdayISO(); label = 'Yesterday'; days = 1;
-      } else {
-        const weekAgo = new Date();
-        weekAgo.setDate(weekAgo.getDate() - 6);
-        periodStart = weekAgo.toISOString().slice(0, 10);
-        periodEnd = today; label = 'This Week'; days = 7;
-      }
-      const rangeStats = await getRangeStats(user.id, periodStart, periodEnd);
-      body = formatStatsRange(label, rangeStats, user.currency, days);
-    }
-
-    const breakdown = await getCategoryBreakdown(user.id, periodStart, periodEnd);
-    const suffix = formatCategoryBreakdown(breakdown, user.currency)
-      + formatMonthlyBudgetLine(dashboardStats.totalThisMonth, capInfo, user.currency);
-
-    await ctx.reply(body + suffix);
   });
 
   instance.command('budgets', async (ctx) => {
@@ -616,6 +636,7 @@ async function launch() {
   try {
     await instance.telegram.setMyCommands([
       { command: 'stats',    description: "This month's spending summary" },
+      { command: 'report',   description: 'Visual spending report (image)' },
       { command: 'budgets',  description: 'Budget status for this month' },
       { command: 'recent',   description: 'Your last few expenses' },
       { command: 'goals',    description: 'Savings goal progress' },

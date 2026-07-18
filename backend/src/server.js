@@ -4,6 +4,7 @@ const app = require('./app');
 const runMigrations = require('./db/migrations');
 const { processOverdue } = require('./services/recurringService');
 const telegramBotService = require('./services/telegramBotService');
+const renderService = require('./services/renderService');
 
 const { execute } = require('./db/database');
 
@@ -74,6 +75,15 @@ const PORT = process.env.PORT || 3001;
       console.error('[cron] Monthly insight push failed', err);
     }
   });
+
+  // Without this, every nodemon restart leaks the report renderer's Chromium
+  // until its idle timer fires.
+  for (const signal of ['SIGTERM', 'SIGINT']) {
+    process.once(signal, async () => {
+      await renderService.closeBrowser().catch(() => {});
+      process.exit(0);
+    });
+  }
 
   app.listen(PORT, () => {
     console.log(`Backend running on http://localhost:${PORT}`);

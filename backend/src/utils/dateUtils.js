@@ -27,4 +27,46 @@ function currentYearMonth() {
   return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`;
 }
 
-module.exports = { todayISO, yesterdayISO, getMonthRange, addInterval, currentYearMonth };
+// Resolves the [today|yesterday|week|month] argument shared by the bot's /stats
+// and /report commands into a date range. Returns null for an unrecognised arg
+// so callers can reply with a usage message.
+//
+// Note `days` for the month case is the day-of-month, not the month length —
+// that's what getDashboardStats divides by for its dailyAverage, and matching it
+// keeps /stats and /report agreeing.
+function resolvePeriod(arg) {
+  const key = (arg || '').trim().toLowerCase() || 'month';
+
+  if (key === 'month') {
+    const now = new Date();
+    const { start, end } = getMonthRange(now.getFullYear(), now.getMonth() + 1);
+    return { key: 'month', label: 'This Month', start, end, days: now.getDate(), isMonth: true };
+  }
+
+  if (key === 'today') {
+    const d = todayISO();
+    return { key: 'today', label: 'Today', start: d, end: d, days: 1, isMonth: false };
+  }
+
+  if (key === 'yesterday') {
+    const d = yesterdayISO();
+    return { key: 'yesterday', label: 'Yesterday', start: d, end: d, days: 1, isMonth: false };
+  }
+
+  if (key === 'week') {
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 6);
+    return {
+      key: 'week',
+      label: 'This Week',
+      start: weekAgo.toISOString().slice(0, 10),
+      end: todayISO(),
+      days: 7,
+      isMonth: false,
+    };
+  }
+
+  return null;
+}
+
+module.exports = { todayISO, yesterdayISO, getMonthRange, addInterval, currentYearMonth, resolvePeriod };
