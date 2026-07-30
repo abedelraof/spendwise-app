@@ -6,7 +6,7 @@ const { getDashboardStats, getRangeStats, getCategoryBreakdown, getSpendingTrend
 const budgetService = require('./budgetService');
 const accountService = require('./accountService');
 const { renderReportHtml } = require('./reportTemplate');
-const { renderHtmlToPng } = require('./renderService');
+const { renderHtmlToPng, renderHtmlToPdf } = require('./renderService');
 const { todayISO } = require('../utils/dateUtils');
 
 const MAX_CATEGORY_ROWS = 8;
@@ -191,4 +191,9 @@ async function generateReportPng(user, period) {
   return renderHtmlToPng(renderReportHtml(data));
 }
 
-module.exports = { buildReportData, generateReportPng };
+async function generateReportPdf(user, period) {
+  const data = await buildReportData(user, period);
+  return renderHtmlToPdf(renderReportHtml(data));
+}
+
+module.exports = { buildReportData, generateReportPng, generateReportPdf };

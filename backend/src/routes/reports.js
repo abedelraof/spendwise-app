@@ -29,6 +29,22 @@ router.get('/report.png', auth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// Same card as report.png, as a downloadable PDF (what the bot's /reportpdf sends).
+router.get('/report.pdf', auth, async (req, res, next) => {
+  try {
+    const period = resolvePeriod(req.query.period);
+    if (!period) return res.status(400).json({ error: 'Invalid period. Use today, yesterday, week or month.' });
+
+    const user = await userModel.findById(req.user.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const pdf = await reportService.generateReportPdf(user, period);
+    res.type('pdf')
+      .set('Content-Disposition', `inline; filename="expensebeam-report-${period.key}-${period.end}.pdf"`)
+      .send(pdf);
+  } catch (err) { next(err); }
+});
+
 router.get('/dashboard-stats', auth, async (req, res, next) => {
   try {
     res.json(await expenseService.getDashboardStats(req.user.userId));

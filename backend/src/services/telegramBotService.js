@@ -23,6 +23,7 @@ const HELP_TEXT = `Here's what I can do:
 • Just send a message like "coffee 45, lunch 120" and I'll parse it into expenses for you to confirm.
 • /stats [today|yesterday|week|month] — spending summary
 • /report [today|yesterday|week|month] — a full visual report card as an image
+• /reportpdf [today|yesterday|week|month] — the same report as a PDF document
 • /budgets — budget status for this month
 • /recent — your last few expenses
 • /goals — savings goal progress
@@ -243,6 +244,38 @@ async function buildStatsText(user, period) {
     + formatMonthlyBudgetLine(dashboardStats.totalThisMonth, capInfo, user.currency);
 }
 
+// Shared scaffold for /report and /reportpdf: they differ only in what they
+// produce and how they send it (the `deliver` callback). Everything else —
+// linked-user guard, period parsing, the refreshing chat action, and the
+// degrade-to-/stats-text fallback — is identical.
+async function runReport(ctx, { commandRe, usage, chatAction, deliver }) {
+  const user = await getLinkedUser(ctx.chat.id);
+  if (!user) return ctx.reply(NOT_LINKED_MSG);
+
+  const arg = ctx.message.text.replace(commandRe, '').trim().toLowerCase();
+  const period = resolvePeriod(arg);
+  if (!period) return ctx.reply(usage);
+
+  // Telegram clears a chat action after ~5s, so refresh it until we're done.
+  // The catch matters: if the user blocks the bot mid-render, an unhandled
+  // rejection from the timer would take the process down.
+  await ctx.sendChatAction(chatAction).catch(() => {});
+  const ticker = setInterval(() => { ctx.sendChatAction(chatAction).catch(() => {}); }, 4000);
+
+  try {
+    await deliver(user, period);
+  } catch (err) {
+    // Chromium missing, launch denied, render timeout, OOM — all land here and
+    // degrade to the existing /stats text rather than to an error.
+    console.error('[telegram] report render failed:', err);
+    await ctx.reply(
+      `I couldn't generate the report just now — here's the text version instead.\n\n${await buildStatsText(user, period)}`
+    );
+  } finally {
+    clearInterval(ticker);
+  }
+}
+
 const confirmKeyboard = Markup.inlineKeyboard([
   Markup.button.callback('✅ Confirm', 'confirm_expenses'),
   Markup.button.callback('❌ Cancel', 'cancel_expenses'),
@@ -315,37 +348,32 @@ function createBot() {
     await ctx.reply(await buildStatsText(user, period));
   });
 
-  instance.command('report', async (ctx) => {
-    const user = await getLinkedUser(ctx.chat.id);
-    if (!user) return ctx.reply(NOT_LINKED_MSG);
-
-    const arg = ctx.message.text.replace(/^\/report(@\S+)?\s*/i, '').trim().toLowerCase();
-    const period = resolvePeriod(arg);
-    if (!period) return ctx.reply('Usage: /report [today|yesterday|week|month]');
-
-    // Telegram clears a chat action after ~5s, so refresh it until we're done.
-    // The catch matters: if the user blocks the bot mid-render, an unhandled
-    // rejection from the timer would take the process down.
-    await ctx.sendChatAction('upload_photo').catch(() => {});
-    const ticker = setInterval(() => { ctx.sendChatAction('upload_photo').catch(() => {}); }, 4000);
-
-    try {
+  instance.command('report', (ctx) => runReport(ctx, {
+    commandRe: /^\/report(@\S+)?\s*/i,
+    usage: 'Usage: /report [today|yesterday|week|month]',
+    chatAction: 'upload_photo',
+    deliver: async (user, period) => {
       const png = await reportService.generateReportPng(user, period);
       await ctx.replyWithPhoto(
         { source: png },
         { caption: `📊 ${period.label} report · ${period.start} – ${period.end}` }
       );
-    } catch (err) {
-      // Chromium missing, launch denied, render timeout, OOM — all land here and
-      // degrade to the existing /stats text rather than to an error.
-      console.error('[telegram] /report render failed:', err);
-      await ctx.reply(
-        `I couldn't render the report image just now — here's the text version instead.\n\n${await buildStatsText(user, period)}`
+    },
+  }));
+
+  // Both spellings so a typed /reportPdf works as well as the lowercase menu entry.
+  instance.command(['reportpdf', 'reportPdf'], (ctx) => runReport(ctx, {
+    commandRe: /^\/reportpdf(@\S+)?\s*/i,
+    usage: 'Usage: /reportpdf [today|yesterday|week|month]',
+    chatAction: 'upload_document',
+    deliver: async (user, period) => {
+      const pdf = await reportService.generateReportPdf(user, period);
+      await ctx.replyWithDocument(
+        { source: pdf, filename: `expensebeam-report-${period.key}-${period.end}.pdf` },
+        { caption: `📄 ${period.label} report · ${period.start} – ${period.end}` }
       );
-    } finally {
-      clearInterval(ticker);
-    }
-  });
+    },
+  }));
 
   instance.command('budgets', async (ctx) => {
     const user = await getLinkedUser(ctx.chat.id);
@@ -637,6 +665,7 @@ async function launch() {
     await instance.telegram.setMyCommands([
       { command: 'stats',    description: "This month's spending summary" },
       { command: 'report',   description: 'Visual spending report (image)' },
+      { command: 'reportpdf', description: 'Visual spending report (PDF)' },
       { command: 'budgets',  description: 'Budget status for this month' },
       { command: 'recent',   description: 'Your last few expenses' },
       { command: 'goals',    description: 'Savings goal progress' },

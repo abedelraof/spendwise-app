@@ -72,7 +72,10 @@ function withTimeout(promise, ms, label) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-async function renderOnce(html, { width, deviceScaleFactor, selector, timeoutMs }) {
+// Loads the HTML into a fresh page (viewport, offline guard, fonts) and hands it
+// to `capture`, which decides whether to screenshot or print. Every output
+// format shares this so the browser lifecycle lives in exactly one place.
+async function withPage(html, { width, deviceScaleFactor, timeoutMs }, capture) {
   const browser = await getBrowser();
   const page = await browser.newPage();
 
@@ -92,16 +95,19 @@ async function renderOnce(html, { width, deviceScaleFactor, selector, timeoutMs 
     await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
     await page.evaluate(() => document.fonts.ready);
 
-    // Screenshotting the element rather than the viewport means the PNG is
-    // exactly as tall as the content, with no manual height arithmetic.
-    const element = await page.$(selector);
-    if (!element) throw new Error(`Report root "${selector}" not found in rendered HTML`);
-
-    return await element.screenshot({ type: 'png' });
+    return await capture(page);
   } finally {
     await page.close().catch(() => {});
     scheduleIdleClose();
   }
+}
+
+// Serializes work onto the single-page queue and bounds it with the timeout.
+function enqueue(task, timeoutMs, label) {
+  const run = queue.then(() => withTimeout(task(), timeoutMs, label));
+  // Keep the chain alive regardless of this task's outcome.
+  queue = run.then(() => {}, () => {});
+  return run;
 }
 
 /**
@@ -116,13 +122,51 @@ function renderHtmlToPng(html, opts = {}) {
     timeoutMs = DEFAULT_TIMEOUT_MS,
   } = opts;
 
-  const run = queue.then(
-    () => withTimeout(renderOnce(html, { width, deviceScaleFactor, selector, timeoutMs }), timeoutMs, 'Report render'),
-  );
+  return enqueue(() => withPage(html, { width, deviceScaleFactor, timeoutMs }, async (page) => {
+    // Screenshotting the element rather than the viewport means the PNG is
+    // exactly as tall as the content, with no manual height arithmetic.
+    const element = await page.$(selector);
+    if (!element) throw new Error(`Report root "${selector}" not found in rendered HTML`);
+    return element.screenshot({ type: 'png' });
+  }), timeoutMs, 'Report render');
+}
 
-  // Keep the chain alive regardless of this render's outcome.
-  queue = run.then(() => {}, () => {});
-  return run;
+/**
+ * A single-page PDF sized to exactly fit the report card, so it looks identical
+ * to the PNG but with crisp, selectable vector text.
+ * @param {string} html a complete standalone HTML document
+ * @returns {Promise<Buffer>} PDF bytes
+ */
+function renderHtmlToPdf(html, opts = {}) {
+  const {
+    width = 900,
+    deviceScaleFactor = 2,
+    selector = '#report',
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+  } = opts;
+
+  return enqueue(() => withPage(html, { width, deviceScaleFactor, timeoutMs }, async (page) => {
+    // Size the "paper" to the card's own box so the whole report is one page
+    // rather than A4-paginated with margins. The element is at the origin
+    // because the CSS reset zeroes the body margin.
+    const height = await page.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      return Math.ceil(el ? el.getBoundingClientRect().height : document.body.scrollHeight);
+    }, selector);
+
+    const pdf = await page.pdf({
+      width: `${width}px`,
+      // A few extra px absorbs sub-pixel rounding that would otherwise spill
+      // into a blank second page; pageRanges is the hard backstop.
+      height: `${height + 4}px`,
+      printBackground: true,   // without this the dark theme prints white
+      pageRanges: '1',
+    });
+
+    // page.pdf() returns a Uint8Array (unlike screenshot's Buffer); Express and
+    // Telegraf only accept a Buffer/stream, so normalise the contract here.
+    return Buffer.isBuffer(pdf) ? pdf : Buffer.from(pdf);
+  }), timeoutMs, 'Report PDF render');
 }
 
 async function closeBrowser() {
@@ -138,4 +182,4 @@ async function closeBrowser() {
   }
 }
 
-module.exports = { renderHtmlToPng, closeBrowser };
+module.exports = { renderHtmlToPng, renderHtmlToPdf, closeBrowser };
