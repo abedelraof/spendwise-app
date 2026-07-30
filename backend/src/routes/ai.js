@@ -16,14 +16,13 @@ function getCacheKey(userId, text) {
   return crypto.createHash('sha256').update(`${userId}:${text}`).digest('hex');
 }
 
+// AI is free for every user (no plan gate). A per-user monthly cap remains as a
+// cost guard on the shared Claude API key — cached hits don't count toward it.
 async function enforceAiQuota(req, res, next) {
   const user = await userModel.findById(req.user.userId);
   if (!user) return res.status(401).json({ error: 'User not found' });
-  if (user.plan === 'free') {
-    return res.status(403).json({ error: 'pro_required', message: 'AI features require a Pro subscription.' });
-  }
   if (user.ai_used_this_month >= 100) {
-    return res.status(429).json({ error: 'quota_exceeded', message: 'Monthly AI quota reached.', reset_date: getResetDate() });
+    return res.status(429).json({ error: 'quota_exceeded', message: 'Monthly AI limit reached.', reset_date: getResetDate() });
   }
   req.aiUser = user;
   next();

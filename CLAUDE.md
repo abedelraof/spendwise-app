@@ -250,8 +250,8 @@ telegram_sessions (chat_id PRIMARY KEY → telegram_links, pending_expenses JSON
 - Frontend stores token in localStorage, attaches via `Authorization: Bearer` header in `useApi.js`
 
 ### Freemium AI + Subscriptions
-- `users.plan` is `'free'` or `'pro'`. Free users get **403 `pro_required`** on any AI call; Pro users get **100 AI calls/month**, tracked in `ai_used_this_month`.
-- `enforceAiQuota` middleware in `routes/ai.js` gates both `POST /ai/parse` and `POST /ai/ask` — checks plan, then quota, before calling Claude.
+- `users.plan` is `'free'` or `'pro'`, but **AI is free for every user regardless of plan** (the Pro gate was removed). A per-user cap of **100 AI calls/month** (`ai_used_this_month`) remains purely as a cost guard on the shared Claude key; there is no longer a `403 pro_required`.
+- `enforceAiQuota` middleware in `routes/ai.js` gates both `POST /ai/parse` and `POST /ai/ask` — it only checks the monthly counter (429 `quota_exceeded`), no plan check. The monthly-reset cron in `server.js` resets **all** users' counters (not just pro), so free users' caps actually roll over.
 - Every AI request/response is cached 24h in `ai_parse_cache` keyed by `sha256(userId:inputText)`; a cache hit returns immediately and does **not** increment `ai_used_this_month`.
 - `POST /api/subscription/verify` (mobile app, Google Play) takes `{ purchase_token, product_id, platform }`, calls the Google Play Developer API (`routes/subscription.js` builds its own OAuth JWT assertion from `GOOGLE_SERVICE_ACCOUNT_JSON`), rejects tokens already linked to another account, and on success sets `plan = 'pro'`, `subscription_expiry`, `play_purchase_token`.
 - Cron in `server.js`: resets `ai_used_this_month` for all pro users on the 1st of each month (`0 0 1 * *`); downgrades expired pro users to free daily at 1 AM (`0 1 * * *`).
@@ -409,7 +409,7 @@ telegram_sessions (chat_id PRIMARY KEY → telegram_links, pending_expenses JSON
 ### AI — `/api/ai` (all quota-gated via `enforceAiQuota`, all 24h-cached)
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/parse` | Natural language → expense array. 403 `pro_required` (free plan) / 429 `quota_exceeded` |
+| POST | `/parse` | Natural language → expense array. Free for all plans; 429 `quota_exceeded` past the 100/month cap |
 | POST | `/ask` | Finance Chat: free-form question + financial context → markdown answer |
 
 ### Insights — `/api/insights`
@@ -509,7 +509,7 @@ Production runs via Docker Compose on a single host (`expensebeam.com`): a `post
 
 11. **Recurring is a tab, not a page**: `Recurring.jsx` still exists as a component but is no longer linked from `Sidebar.jsx` — its functionality was moved into a tab inside `Transactions.jsx`. Don't add a sidebar entry back for it without checking whether the old page is still meant to be reachable.
 
-12. **AI is server-funded and quota-gated, not BYO-key**: `users.claude_api_key` and `cryptoService.js` are legacy leftovers from an earlier per-user-key design. All Claude calls now use `ANTHROPIC_API_KEY` from the backend's own env, and are gated by `enforceAiQuota` in `routes/ai.js` (plan check + monthly counter) plus a 24h response cache in `ai_parse_cache`. When touching AI routes, remember cached hits must not increment `ai_used_this_month`.
+12. **AI is server-funded, free for all users, and quota-capped (not plan-gated), not BYO-key**: `users.claude_api_key` and `cryptoService.js` are legacy leftovers from an earlier per-user-key design. All Claude calls now use `ANTHROPIC_API_KEY` from the backend's own env, and are gated by `enforceAiQuota` in `routes/ai.js` — a **monthly 100-call cost cap only, applied to every user regardless of plan** (the old `plan === 'free'` → 403 gate was removed), plus a 24h response cache in `ai_parse_cache`. When touching AI routes, remember cached hits must not increment `ai_used_this_month`. The frontend maps `429 quota_exceeded` to a friendly message via `aiErrorMessage` in `frontend/src/api/aiApi.js`.
 
 13. **Backend is PostgreSQL, not SQLite**: `db/database.js` wraps a `pg` Pool with `query()/queryOne()/execute()` helpers — there is no `better-sqlite3` and no local `.db` file. Local dev needs a running Postgres instance and `DATABASE_URL` in `backend/.env`; schema changes go in `migrations.js` as idempotent `CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` statements, not one-off migration scripts.
 
@@ -523,7 +523,7 @@ Production runs via Docker Compose on a single host (`expensebeam.com`): a `post
 
 18. **The monthly-insight `claude_api_key` bug**: until it was fixed, `routes/insights.js` checked the legacy per-user `users.claude_api_key` field (see gotcha #12) and 402'd for every real user, since that field has been unused since the freemium migration. `insightService.generateMonthlyInsight` now correctly uses the server-side key like everything else. If you see other code still branching on `claude_api_key`/`hasApiKey`, treat it as dead and suspect, not intentional.
 
-19. **Telegram bot AI calls bypass the freemium quota entirely**: a deliberate decision — `enforceAiQuota` in `routes/ai.js` only gates the `/api/ai/*` HTTP routes. `telegramBotService.js` never checks `plan` or `ai_used_this_month`; every linked user gets unlimited parsing/revision/`/ask`/monthly insights regardless of free/pro status. Don't "fix" this without checking — it's intentional, not an oversight (unlike gotcha #18).
+19. **Telegram bot AI calls have no monthly cap at all**: a deliberate decision — `enforceAiQuota` in `routes/ai.js` (now just the 100/month cost cap, see gotcha #12) only gates the `/api/ai/*` HTTP routes. `telegramBotService.js` never checks `ai_used_this_month`; every linked user gets unlimited parsing/revision/`/ask`/monthly insights over Telegram. Don't "fix" this without checking — it's intentional, not an oversight (unlike gotcha #18).
 
 20. **Puppeteer is tightly coupled to the Alpine base image**: `backend/Dockerfile` installs the system `chromium` and sets `PUPPETEER_SKIP_DOWNLOAD` **above** the `npm ci` line — moving it below makes the build download a glibc Chromium that cannot run on musl. `PUPPETEER_EXECUTABLE_PATH` is what makes it work in-container; on a dev machine that variable is unset and Puppeteer resolves the copy it downloaded itself, so both environments share one code path. Dropping `font-noto-emoji` from the `apk add` silently turns every emoji in the report (including user category icons) into a tofu box, and dropping `ttf-dejavu` changes the whole card's typeface. The base image is pinned to `node:22-alpine3.21` on purpose: the system Chromium must stay CDP-compatible with the installed Puppeteer major, and skew shows up as `launch()` succeeding but `screenshot()` throwing.
 

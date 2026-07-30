@@ -3,7 +3,7 @@ import { MessageCircle, Sparkles, Loader2, Send, RefreshCw } from 'lucide-react'
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import useApi from '../../hooks/useApi';
-import { askQuestion } from '../../api/aiApi';
+import { askQuestion, aiErrorMessage } from '../../api/aiApi';
 import { showToast } from '../common/Toast';
 
 const ALL_SUGGESTIONS = [
@@ -47,11 +47,7 @@ export default function FinanceChat() {
       const data = await askQuestion(api, q.trim());
       setAnswer(data.answer);
     } catch (err) {
-      if (err.response?.status === 402) {
-        showToast('Add a Claude API key in Settings to use this feature', 'error');
-      } else {
-        showToast('Failed to get answer', 'error');
-      }
+      showToast(aiErrorMessage(err, 'Failed to get answer'), 'error');
     } finally { setLoading(false); }
   }
 

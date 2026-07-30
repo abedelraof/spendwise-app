@@ -10,7 +10,7 @@ import BudgetAlerts from '../components/dashboard/BudgetAlerts';
 import UpcomingBills from '../components/dashboard/UpcomingBills';
 import { getDashboardStats } from '../api/reportsApi';
 import { createExpenses } from '../api/expensesApi';
-import { parseExpenses } from '../api/aiApi';
+import { parseExpenses, aiErrorMessage } from '../api/aiApi';
 import { getCategories, createCategory, createSubcategory } from '../api/categoriesApi';
 import { getSettings } from '../api/settingsApi';
 import { getBudgets } from '../api/budgetsApi';
@@ -140,7 +140,7 @@ export default function Dashboard() {
         setParsed(data.expenses);
       }
     } catch (err) {
-      showToast(err.response?.data?.error || 'Parsing failed', 'error');
+      showToast(aiErrorMessage(err, 'Parsing failed'), 'error');
     } finally { setParsing(false); }
   }
 

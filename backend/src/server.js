@@ -28,10 +28,11 @@ const PORT = process.env.PORT || 3001;
   // Reset AI usage counters on the 1st of each month
   cron.schedule('0 0 1 * *', async () => {
     try {
+      // AI is free for everyone, so every user's monthly counter must reset —
+      // not just pro users, or free users would stay blocked after their first 100.
       await execute(
         `UPDATE users SET ai_used_this_month = 0,
-           ai_quota_reset_date = TO_CHAR(DATE_TRUNC('month', NOW() + INTERVAL '1 month'), 'YYYY-MM-DD')
-         WHERE plan = 'pro'`
+           ai_quota_reset_date = TO_CHAR(DATE_TRUNC('month', NOW() + INTERVAL '1 month'), 'YYYY-MM-DD')`
       );
       console.log('[cron] Reset monthly AI usage counters');
     } catch (err) {
