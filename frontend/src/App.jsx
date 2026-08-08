@@ -14,6 +14,7 @@ import Accounts from './pages/Accounts';
 import Income from './pages/Income';
 import RecordBalances from './pages/RecordBalances';
 import Planning from './pages/Planning';
+import Buckets from './pages/Buckets';
 import Admin from './pages/Admin';
 import AdminUsers from './pages/AdminUsers';
 import AdminUserDetail from './pages/AdminUserDetail';
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="accounts/record" element={<RecordBalances />} />
           <Route path="income" element={<Income />} />
           <Route path="planning" element={<Planning />} />
+          <Route path="buckets" element={<Buckets />} />
           <Route path="settings" element={<Settings />} />
           <Route path="admin" element={<Admin />} />
           <Route path="admin/users" element={<AdminUsers />} />

@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, ArrowLeftRight, BarChart2,
-  Settings, LogOut, Wallet, PiggyBank, TrendingUp, Target, ShieldCheck,
+  Settings, LogOut, Wallet, PiggyBank, TrendingUp, Target, ShieldCheck, Boxes,
 } from 'lucide-react';
 import useAuth from '../../hooks/useAuth';
 
@@ -12,6 +12,7 @@ const nav = [
   { to: '/app/accounts',         icon: PiggyBank,        label: 'Accounts' },
   { to: '/app/income',           icon: TrendingUp,       label: 'Income' },
   { to: '/app/planning',         icon: Target,           label: 'Planning' },
+  { to: '/app/buckets',          icon: Boxes,            label: 'Buckets' },
   { to: '/app/settings',         icon: Settings,         label: 'Settings' },
 ];
 

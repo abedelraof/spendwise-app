@@ -3,7 +3,8 @@ const { query, queryOne, execute, pool } = require('../db/database');
 const EXPENSE_SELECT = `
   SELECT e.*,
     c.name AS category_name, c.icon AS category_icon, c.color AS category_color,
-    s.name AS subcategory_name
+    s.name AS subcategory_name,
+    ARRAY(SELECT eb.bucket_id FROM expense_buckets eb WHERE eb.expense_id = e.id) AS bucket_ids
   FROM expenses e
   LEFT JOIN categories c ON e.category_id = c.id
   LEFT JOIN subcategories s ON e.subcategory_id = s.id
@@ -40,7 +41,7 @@ const insertMany = async (userId, expenses) => {
 };
 
 function buildListQuery(userId, filters) {
-  const { startDate, endDate, categoryIds, subcategoryIds, minAmount, maxAmount, search, tags,
+  const { startDate, endDate, categoryIds, subcategoryIds, bucketIds, minAmount, maxAmount, search, tags,
     sortBy = 'date', sortDir = 'DESC', limit = 20, offset = 0 } = filters;
 
   const where = ['e.user_id = $1'];
@@ -56,6 +57,10 @@ function buildListQuery(userId, filters) {
   if (subcategoryIds?.length) {
     where.push(`e.subcategory_id = ANY($${idx++})`);
     params.push(subcategoryIds);
+  }
+  if (bucketIds?.length) {
+    where.push(`e.id IN (SELECT expense_id FROM expense_buckets WHERE bucket_id = ANY($${idx++}))`);
+    params.push(bucketIds);
   }
   if (minAmount) { where.push(`e.amount >= $${idx++}`); params.push(Number(minAmount)); }
   if (maxAmount) { where.push(`e.amount <= $${idx++}`); params.push(Number(maxAmount)); }

@@ -32,6 +32,7 @@ app.use('/api/accounts',       require('./routes/accounts'));
 app.use('/api/account-groups', require('./routes/accountGroups'));
 app.use('/api/rates',      require('./routes/rates'));
 app.use('/api/goals',      require('./routes/goals'));
+app.use('/api/buckets',    require('./routes/buckets'));
 app.use('/api/income',     require('./routes/income'));
 app.use('/api/seed',       require('./routes/seed'));
 app.use('/api/admin',      require('./routes/admin'));

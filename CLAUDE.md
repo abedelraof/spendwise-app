@@ -72,7 +72,8 @@ D:\FlutterApp\
 │       │   ├── categoryModel.js
 │       │   ├── subcategoryModel.js
 │       │   ├── expenseModel.js
-│       │   └── goalModel.js          ← findByUser() — goal + linked account + latest balance join
+│       │   ├── goalModel.js          ← findByUser() — goal + linked account + latest balance join
+│       │   └── bucketModel.js         ← findByUser() + setExpenseBuckets() (transactional many-to-many assign)
 │       ├── routes/
 │       │   ├── auth.js         ← POST /login, POST /signup (response includes is_admin)
 │       │   ├── settings.js     ← GET/PUT /settings, POST /settings/clear-data ("Danger Zone")
@@ -82,6 +83,7 @@ D:\FlutterApp\
 │       │   ├── recurring.js    ← CRUD /recurring
 │       │   ├── accounts.js     ← CRUD /accounts + reorder + balance snapshots
 │       │   ├── accountGroups.js← CRUD /account-groups + reorder (user-defined Accounts page groupings)
+│       │   ├── buckets.js      ← CRUD /buckets + reorder + breakdown/trend/expenses stats
 │       │   ├── income.js       ← CRUD /income (filterable list)
 │       │   ├── goals.js        ← CRUD /goals (savings goals)
 │       │   ├── reports.js      ← GET /reports/* (trend, breakdown, topDays, export)
@@ -129,6 +131,7 @@ D:\FlutterApp\
 │       │   ├── Accounts.jsx         ← Multi-account (with groups), balance snapshots, net worth
 │       │   ├── RecordBalances.jsx   ← `/app/accounts/record` — bulk balance-snapshot entry flow for all accounts at once
 │       │   ├── Planning.jsx         ← Merges Budgets (BudgetManager) + Savings Goals into one screen
+│       │   ├── Buckets.jsx          ← Tabbed: Overview (bars+trend), Buckets (CRUD+target bars), Assign (date filter + per-row multi-select)
 │       │   ├── Income.jsx           ← Income entries, filters, source badges
 │       │   ├── Settings.jsx         ← Preferences, Telegram linking, categories, budgets, CSV import, Danger Zone (clear-data)
 │       │   ├── Admin.jsx            ← Admin stats dashboard (visible only if user.is_admin === 1)
@@ -138,9 +141,9 @@ D:\FlutterApp\
 │       │   └── Signup.jsx
 │       └── components/
 │           ├── auth/            ProtectedRoute.jsx, PublicHome.jsx
-│           ├── common/          Modal.jsx, Toast.jsx, Spinner.jsx, EmptyState.jsx, GlobalSearch.jsx (Ctrl+K), TagInput.jsx
+│           ├── common/          Modal.jsx, Toast.jsx, Spinner.jsx, EmptyState.jsx, GlobalSearch.jsx (Ctrl+K), TagInput.jsx, BucketPicker.jsx (bucket multi-select)
 │           ├── layout/           AppShell.jsx (desktop sidebar + mobile drawer), Sidebar.jsx (nav: Dashboard, Transactions,
-│           │                     Reports, Accounts, Income, Planning, Settings, + conditional Admin link)
+│           │                     Reports, Accounts, Income, Planning, Buckets, Settings, + conditional Admin link)
 │           ├── dashboard/        StatsBar.jsx, StatCard.jsx, ExpenseInputPanel.jsx, ParsedExpenseConfirm.jsx,
 │           │                     LatestTransactions.jsx, BudgetAlerts.jsx, MonthlyInsight.jsx, UpcomingBills.jsx,
 │           │                     FinanceChat.jsx (natural-language Q&A over the user's finances, markdown+GFM tables)
@@ -201,6 +204,21 @@ accounts (
 
 account_groups (id, user_id, name, icon, sort_order, created_at)
 -- INDEX: (user_id)
+
+buckets (
+  id, user_id, name, icon, color,
+  target_amount, target_currency,      -- nullable = no target (enables a spend-vs-target bar)
+  sort_order, created_at
+  -- UNIQUE(user_id, name)
+)
+-- INDEX: (user_id)
+
+expense_buckets (                       -- many-to-many: an expense in N buckets
+  expense_id → expenses, bucket_id → buckets, user_id → users
+  -- PRIMARY KEY (expense_id, bucket_id); user_id denormalized for direct ownership filtering
+  -- all three FKs ON DELETE CASCADE
+)
+-- INDEX: (bucket_id), (user_id)
 
 account_balances (
   id, account_id, user_id,
@@ -295,6 +313,13 @@ telegram_sessions (chat_id PRIMARY KEY → telegram_links, pending_expenses JSON
 - Goal linked to an account (`account_id` set) → progress = `account.latest_balance / target_amount`; unlinked → progress = `current_amount / target_amount`
 - Days-left badge: amber < 30 days, red if overdue
 
+### Buckets (cross-cutting transaction grouping)
+- **Buckets** are user-defined labels that group **expenses** across categories for a purpose/project ("Dubai Trip", "Tax-deductible"). Unlike `category_id` (a single FK) they are **many-to-many** via the `expense_buckets` join — one expense can be in several buckets. Optional per-bucket `target_amount` drives a spend-vs-target progress bar.
+- **Assign** two ways, both hitting `PUT /api/expenses/:id/buckets { bucketIds }` → `bucketModel.setExpenseBuckets` (transactional delete+insert, scoped to the user, silently drops non-owned bucket ids): (1) the Transactions edit modal (`ParsedExpenseConfirm` gains a `BucketPicker` shown only when editing an existing expense; `Transactions.handleUpdate` calls `setExpenseBuckets` after the field update), and (2) the **Assign** tab on the Buckets page — a date from–to filter → transaction list, each row a `BucketPicker` + per-row Save.
+- `Buckets.jsx` is tabbed: **Overview** (KPI tiles, a **horizontal-bar** breakdown, a per-bucket trend line), **Buckets** (CRUD + target bars), **Assign**. Charts reuse the Reports patterns; the shared multi-select is `components/common/BucketPicker.jsx` (adapted from `Transactions.jsx`'s `CategoryPicker`).
+- Stats live in `expenseService.getBucketBreakdown` / `getBucketTrend` (clones of `getCategoryBreakdown` / `getSpendingTrend` with an `expense_buckets` join), exposed via `routes/buckets.js`. Expense list rows now carry `bucket_ids` (a correlated `ARRAY(...)` in `EXPENSE_SELECT`); `expenseModel.buildListQuery` also accepts a `bucketIds` filter.
+- **Double-counting is by design**: an expense in two buckets is summed into both, so per-bucket totals can exceed real spend. The breakdown is deliberately bars (not a pie labelled share-of-spending), with a UI note; `getBucketBreakdown`'s `percentage` is share of the summed bucket totals, not of actual spending.
+
 ### Admin Dashboard
 - Gated by `users.is_admin = 1`; `middleware/adminAuth.js` enforces it server-side, `Sidebar.jsx` only renders the nav link client-side when `user.is_admin === 1`
 - `GET /api/admin/stats` — total/new/active users, expense & income totals, account count, users with a (legacy) API key set, signups by month
@@ -382,6 +407,20 @@ telegram_sessions (chat_id PRIMARY KEY → telegram_links, pending_expenses JSON
 | POST | `/` | Create goal |
 | PUT | `/:id` | Partial update |
 | DELETE | `/:id` | Delete |
+
+### Buckets — `/api/buckets`
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/` | All buckets + month-to-date `spent` & `expense_count` rollup |
+| GET | `/breakdown?startDate&endDate` | Ranked per-bucket totals for the range (bar chart) |
+| POST | `/` | Create bucket (409-style dup-name → 400) |
+| PUT | `/reorder` | Bulk `sort_order` (registered before `/:id`) |
+| GET | `/:id/trend?startDate&endDate` | Per-day totals for one bucket (line chart) |
+| GET | `/:id/expenses?startDate&endDate` | That bucket's expenses (drill-down) |
+| PUT | `/:id` | Partial update (name/icon/color/target) |
+| DELETE | `/:id` | Delete (join rows cascade) |
+
+Assignment lives on the expenses route: `PUT /api/expenses/:id/buckets { bucketIds }`.
 
 ### Reports — `/api/reports`
 | Method | Path | Description |

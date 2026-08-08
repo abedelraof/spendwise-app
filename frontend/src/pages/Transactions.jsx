@@ -5,6 +5,7 @@ import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import { getExpenses, deleteExpense, bulkDeleteExpenses, updateExpense } from '../api/expensesApi';
 import { getCategories } from '../api/categoriesApi';
+import { getBuckets, setExpenseBuckets } from '../api/bucketsApi';
 import { getRecurring, createRecurring, deleteRecurring } from '../api/recurringApi';
 import { showToast } from '../components/common/Toast';
 import Spinner from '../components/common/Spinner';
@@ -171,6 +172,7 @@ export default function Transactions() {
   const [expenses, setExpenses]     = useState([]);
   const [total, setTotal]           = useState(0);
   const [categories, setCategories] = useState([]);
+  const [buckets, setBuckets] = useState([]);
   const [loading, setLoading]       = useState(true);
   const [selected, setSelected]     = useState(new Set());
   const [editingExpense, setEditingExpense] = useState(null);
@@ -211,6 +213,7 @@ export default function Transactions() {
 
   useEffect(() => { fetchExpenses(); }, [fetchExpenses]);
   useEffect(() => { getCategories(api).then(d => setCategories(d.categories)).catch(() => {}); }, [api]);
+  useEffect(() => { getBuckets(api).then(d => setBuckets(d.buckets)).catch(() => {}); }, [api]);
   useEffect(() => { if (activeTab === 'recurring') fetchRecurring(); }, [activeTab, fetchRecurring]);
 
   // ── Expense handlers ─────────────────────────────────────────────────────
@@ -252,7 +255,12 @@ export default function Transactions() {
 
   async function handleUpdate(confirmed) {
     try {
-      await updateExpense(api, editingExpense.id, confirmed[0]);
+      const c = confirmed[0];
+      await updateExpense(api, editingExpense.id, c);
+      // Buckets live in a join table, so sync them separately from the field update.
+      if (Array.isArray(c.bucket_ids)) {
+        await setExpenseBuckets(api, editingExpense.id, c.bucket_ids);
+      }
       setEditingExpense(null);
       fetchExpenses();
       showToast('Updated');
@@ -650,6 +658,7 @@ export default function Transactions() {
         <ParsedExpenseConfirm
           expenses={[{ ...editingExpense, category: editingExpense.category_name, subcategory: editingExpense.subcategory_name }]}
           categories={categories}
+          buckets={buckets}
           onConfirm={handleUpdate}
           onClose={() => setEditingExpense(null)}
         />

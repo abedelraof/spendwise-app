@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { CheckCircle2, ChevronRight, Trash2, CheckCheck } from 'lucide-react';
 import Modal from '../common/Modal';
 import TagInput from '../common/TagInput';
+import BucketPicker from '../common/BucketPicker';
 
 const CATEGORIES = ['Food','Transport','Housing','Entertainment','Health','Shopping','Education','Utilities','Other'];
 
@@ -24,7 +25,7 @@ const CONFETTI = Array.from({ length: 28 }, (_, i) => ({
 
 function fmt(n) { return Number(n || 0).toLocaleString('en', { maximumFractionDigits: 0 }); }
 
-export default function ParsedExpenseConfirm({ expenses: initial, categories = [], onConfirm, onClose }) {
+export default function ParsedExpenseConfirm({ expenses: initial, categories = [], buckets = [], onConfirm, onClose }) {
   const [expenses, setExpenses]     = useState(initial.map(e => ({ ...e, notes: e.notes || '', tags: e.tags || '' })));
   const [current, setCurrent]       = useState(0);
   const [isSaving, setIsSaving]     = useState(false);
@@ -310,6 +311,15 @@ export default function ParsedExpenseConfirm({ expenses: initial, categories = [
             <label className="label">Tags</label>
             <TagInput value={e.tags || ''} onChange={v => update('tags', v)} />
           </div>
+
+          {/* Buckets — only when editing an existing expense */}
+          {e.id != null && buckets.length > 0 && (
+            <div>
+              <label className="label">Buckets</label>
+              <BucketPicker buckets={buckets} value={e.bucket_ids || []}
+                onChange={v => update('bucket_ids', v)} className="w-full" placeholder="Assign to buckets…" />
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex items-center gap-2 pt-1">

@@ -138,6 +138,31 @@ async function runMigrations() {
 
       CREATE INDEX IF NOT EXISTS idx_account_groups_user ON account_groups(user_id);
 
+      CREATE TABLE IF NOT EXISTS buckets (
+        id              SERIAL PRIMARY KEY,
+        user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name            TEXT NOT NULL,
+        icon            TEXT NOT NULL DEFAULT '🪣',
+        color           TEXT NOT NULL DEFAULT '#7c3aed',
+        target_amount   NUMERIC DEFAULT NULL,
+        target_currency TEXT DEFAULT NULL,
+        sort_order      INTEGER NOT NULL DEFAULT 0,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(user_id, name)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_buckets_user ON buckets(user_id);
+
+      CREATE TABLE IF NOT EXISTS expense_buckets (
+        expense_id INTEGER NOT NULL REFERENCES expenses(id) ON DELETE CASCADE,
+        bucket_id  INTEGER NOT NULL REFERENCES buckets(id)  ON DELETE CASCADE,
+        user_id    INTEGER NOT NULL REFERENCES users(id)    ON DELETE CASCADE,
+        PRIMARY KEY (expense_id, bucket_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_expense_buckets_bucket ON expense_buckets(bucket_id);
+      CREATE INDEX IF NOT EXISTS idx_expense_buckets_user   ON expense_buckets(user_id);
+
       CREATE TABLE IF NOT EXISTS incomes (
         id            SERIAL PRIMARY KEY,
         user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

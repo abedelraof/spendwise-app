@@ -3,15 +3,17 @@ const auth = require('../middleware/auth');
 const expenseModel = require('../models/expenseModel');
 const { matchOrCreateCategory } = require('../services/categoryService');
 const { createExpenses, invalidateInsightCache } = require('../services/expenseService');
+const bucketModel = require('../models/bucketModel');
 
 router.get('/', auth, async (req, res, next) => {
   try {
-    const { startDate, endDate, categoryIds, subcategoryIds, minAmount, maxAmount,
+    const { startDate, endDate, categoryIds, subcategoryIds, bucketIds, minAmount, maxAmount,
       search, tags, sortBy, sortDir, limit, offset } = req.query;
     const filters = {
       startDate, endDate,
       categoryIds: categoryIds ? String(categoryIds).split(',').map(Number) : undefined,
       subcategoryIds: subcategoryIds ? String(subcategoryIds).split(',').map(Number) : undefined,
+      bucketIds: bucketIds ? String(bucketIds).split(',').map(Number) : undefined,
       minAmount, maxAmount, search, tags, sortBy, sortDir, limit, offset,
     };
     res.json(await expenseModel.findByUser(req.user.userId, filters));
@@ -44,6 +46,18 @@ router.put('/:id', auth, async (req, res, next) => {
 
     await invalidateInsightCache(req.user.userId, [expense.date, fields.date]);
     res.json({ expense });
+  } catch (err) { next(err); }
+});
+
+// Replace an expense's bucket assignments. Used by the Transactions edit modal
+// and the Buckets "Assign" screen's per-row Save.
+router.put('/:id/buckets', auth, async (req, res, next) => {
+  try {
+    const { bucketIds } = req.body;
+    if (!Array.isArray(bucketIds)) return res.status(400).json({ error: 'bucketIds array required' });
+    const ok = await bucketModel.setExpenseBuckets(req.user.userId, req.params.id, bucketIds);
+    if (!ok) return res.status(404).json({ error: 'Not found' });
+    res.json({ expense: await expenseModel.findById(req.params.id, req.user.userId) });
   } catch (err) { next(err); }
 });
 

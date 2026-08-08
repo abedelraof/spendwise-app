@@ -76,6 +76,37 @@ async function getCategoryBreakdown(userId, startDate, endDate) {
   return rows.map(r => ({ ...r, percentage: grandTotal ? Math.round((r.total / grandTotal) * 100) : 0 }));
 }
 
+// Per-bucket spend for the range. Buckets are many-to-many, so an expense in two
+// buckets counts in both — the sum of these totals can exceed real spend. The
+// `percentage` is share of that summed total (for comparable bars), NOT share of
+// spending; the UI labels it accordingly.
+async function getBucketBreakdown(userId, startDate, endDate) {
+  const rows = await query(
+    `SELECT b.id, b.name, b.color, b.icon,
+       SUM(e.amount * e.exchange_rate)::float AS total,
+       COUNT(DISTINCT e.id)::int AS expense_count
+     FROM expense_buckets eb
+     JOIN buckets  b ON b.id = eb.bucket_id
+     JOIN expenses e ON e.id = eb.expense_id
+     WHERE eb.user_id = $1 AND e.date BETWEEN $2 AND $3
+     GROUP BY b.id ORDER BY total DESC`,
+    [userId, startDate, endDate]
+  );
+  const summed = rows.reduce((s, r) => s + r.total, 0);
+  return rows.map(r => ({ ...r, percentage: summed ? Math.round((r.total / summed) * 100) : 0 }));
+}
+
+async function getBucketTrend(userId, startDate, endDate, bucketId) {
+  return query(
+    `SELECT e.date, SUM(e.amount * e.exchange_rate)::float AS total
+     FROM expenses e
+     JOIN expense_buckets eb ON eb.expense_id = e.id AND eb.bucket_id = $4
+     WHERE e.user_id = $1 AND e.date BETWEEN $2 AND $3
+     GROUP BY e.date ORDER BY e.date`,
+    [userId, startDate, endDate, bucketId]
+  );
+}
+
 async function getMoMComparison(userId) {
   const now = new Date();
   const curYear = now.getFullYear(), curMonth = now.getMonth() + 1;
@@ -222,4 +253,5 @@ async function createExpenses(userId, expenses) {
 module.exports = {
   getDashboardStats, getMonthlyByCategory, getSpendingTrend, getCategoryBreakdown, getMoMComparison, getTopDays,
   createExpenses, invalidateInsightCache, getFinanceContext, getRangeStats,
+  getBucketBreakdown, getBucketTrend,
 };
