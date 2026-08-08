@@ -3,6 +3,7 @@ const { query, queryOne, execute } = require('../db/database');
 const userModel = require('../models/userModel');
 const categoryModel = require('../models/categoryModel');
 const expenseModel = require('../models/expenseModel');
+const bucketModel = require('../models/bucketModel');
 const goalModel = require('../models/goalModel');
 const { parseExpenses, reviseExpenses, answerQuestion } = require('./aiService');
 const { createExpenses, getDashboardStats, getFinanceContext, getRangeStats, getCategoryBreakdown, invalidateInsightCache } = require('./expenseService');
@@ -30,6 +31,7 @@ const HELP_TEXT = `Here's what I can do:
 • /networth — assets minus liabilities across all accounts
 • /currency <amount> <from> [to] <to> — quick FX conversion, e.g. /currency 100 usd to egp
 • /undo — remove the expenses from your last confirmed message
+• /assign [today|yesterday|YYYY-MM-DD] — assign a day's expenses to buckets, one at a time
 • /digest daily|weekly|off — get a proactive spending digest (you'll also get a monthly AI insight automatically)
 • /ask <question> — ask anything about your finances, e.g. /ask am I on track with my budgets?
 • /help — show this message`;
@@ -309,6 +311,73 @@ async function clearSession(chatId) {
   await execute('DELETE FROM telegram_sessions WHERE chat_id = $1', [chatId]);
 }
 
+// ── /assign bucketing stepper — isolated from the expense-parse session above ──
+// so the on('text') handler never mistakes cursor state for a pending expense list.
+async function getBucketSession(chatId) {
+  const row = await queryOne('SELECT state FROM telegram_bucket_sessions WHERE chat_id = $1', [chatId]);
+  return row?.state ?? null;
+}
+
+async function saveBucketSession(chatId, state) {
+  await execute(
+    `INSERT INTO telegram_bucket_sessions (chat_id, state, updated_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (chat_id) DO UPDATE SET state = EXCLUDED.state, updated_at = NOW()`,
+    [chatId, JSON.stringify(state)]
+  );
+}
+
+async function clearBucketSession(chatId) {
+  await execute('DELETE FROM telegram_bucket_sessions WHERE chat_id = $1', [chatId]);
+}
+
+const ASSIGN_EXPIRED_MSG = '⏳ This assign session expired. Send /assign to start again.';
+
+// Builds the message + per-bucket toggle keyboard for the current transaction.
+function renderAssignStep(state, buckets) {
+  const t = state.txns[state.cursor];
+  const sel = state.sel || [];
+  const selNames = buckets.filter(b => sel.includes(b.id)).map(b => `${b.icon} ${b.name}`);
+
+  const text =
+    `🪣 Transaction ${state.cursor + 1} of ${state.txns.length} · ${state.label}\n\n` +
+    `${t.label}\n${fmtAmount(t.amount)} ${t.currency}\n\n` +
+    `Buckets: ${selNames.length ? selNames.join(', ') : 'none'}\n` +
+    `Tap to toggle, then Done to save.`;
+
+  const bucketRows = buckets.map(b =>
+    [Markup.button.callback(`${sel.includes(b.id) ? '✅ ' : ''}${b.icon} ${b.name}`, `ab:${b.id}`)]);
+  const keyboard = Markup.inlineKeyboard([
+    ...bucketRows,
+    [Markup.button.callback('✔️ Done', 'ab_done'), Markup.button.callback('⏭ Skip', 'ab_skip')],
+    [Markup.button.callback('✖️ Cancel', 'ab_cancel')],
+  ]);
+  return { text, keyboard };
+}
+
+// Shared "move to next transaction or finish" step used by Done and Skip.
+async function advanceAssign(ctx, chatId, user, state) {
+  state.cursor += 1;
+  if (state.cursor >= state.txns.length) {
+    await clearBucketSession(chatId);
+    return safeEdit(ctx, `✅ Done — assigned buckets for ${state.txns.length} transaction${state.txns.length === 1 ? '' : 's'} on ${state.label}.`);
+  }
+  // Re-read the next expense's current buckets (it may have been touched earlier this session).
+  const next = await expenseModel.findById(state.txns[state.cursor].id, user.id);
+  state.sel = next?.bucket_ids || [];
+  await saveBucketSession(chatId, state);
+  const buckets = await bucketModel.findByUser(user.id);
+  const { text, keyboard } = renderAssignStep(state, buckets);
+  return safeEdit(ctx, text, keyboard);
+}
+
+// Telegram rejects edits that don't change anything and stale callback queries;
+// neither should crash the handler.
+async function safeEdit(ctx, text, keyboard) {
+  try { await ctx.editMessageText(text, keyboard); }
+  catch (err) { if (!/message is not modified/i.test(err.description || err.message || '')) throw err; }
+}
+
 function createBot() {
   const instance = new Telegraf(BOT_TOKEN);
 
@@ -479,6 +548,87 @@ function createBot() {
 
     await execute('UPDATE telegram_links SET digest_frequency = $1 WHERE chat_id = $2', [arg, chatId]);
     await ctx.reply(arg === 'off' ? 'Digest turned off.' : `You'll get a ${arg} spending digest from now on.`);
+  });
+
+  // Walk a day's expenses into buckets, one transaction at a time.
+  instance.command('assign', async (ctx) => {
+    const chatId = ctx.chat.id;
+    const user = await getLinkedUser(chatId);
+    if (!user) return ctx.reply(NOT_LINKED_MSG);
+
+    const arg = ctx.message.text.replace(/^\/assign(@\S+)?\s*/i, '').trim().toLowerCase();
+    let date, label;
+    if (!arg || arg === 'today')       { date = todayISO();     label = 'today'; }
+    else if (arg === 'yesterday')      { date = yesterdayISO(); label = 'yesterday'; }
+    else if (/^\d{4}-\d{2}-\d{2}$/.test(arg)) { date = arg;      label = arg; }
+    else return ctx.reply('Usage: /assign [today|yesterday|YYYY-MM-DD]');
+
+    const buckets = await bucketModel.findByUser(user.id);
+    if (!buckets.length) {
+      return ctx.reply('You don\'t have any buckets yet — create some in the app (Buckets → New Bucket) first.');
+    }
+
+    const expenses = await expenseModel.findAll(user.id, { startDate: date, endDate: date, sortBy: 'date', sortDir: 'ASC' });
+    if (!expenses.length) return ctx.reply(`No expenses on ${label}.`);
+
+    const state = {
+      date, label, cursor: 0,
+      sel: expenses[0].bucket_ids || [],
+      txns: expenses.map(e => ({
+        id: e.id,
+        label: e.description || e.category_name || 'Expense',
+        amount: Number(e.amount),
+        currency: e.currency || user.currency,
+      })),
+    };
+    await saveBucketSession(chatId, state);
+    const { text, keyboard } = renderAssignStep(state, buckets);
+    await ctx.reply(text, keyboard);
+  });
+
+  // Toggle a bucket on the current transaction (does not advance).
+  instance.action(/^ab:(\d+)$/, async (ctx) => {
+    const chatId = ctx.chat.id;
+    const user = await getLinkedUser(chatId);
+    const state = await getBucketSession(chatId);
+    await ctx.answerCbQuery().catch(() => {});
+    if (!user || !state) return safeEdit(ctx, ASSIGN_EXPIRED_MSG);
+
+    const id = Number(ctx.match[1]);
+    state.sel = state.sel.includes(id) ? state.sel.filter(x => x !== id) : [...state.sel, id];
+    await saveBucketSession(chatId, state);
+    const buckets = await bucketModel.findByUser(user.id);
+    const { text, keyboard } = renderAssignStep(state, buckets);
+    await safeEdit(ctx, text, keyboard);
+  });
+
+  // Save the current transaction's buckets, then advance.
+  instance.action('ab_done', async (ctx) => {
+    const chatId = ctx.chat.id;
+    const user = await getLinkedUser(chatId);
+    const state = await getBucketSession(chatId);
+    await ctx.answerCbQuery().catch(() => {});
+    if (!user || !state) return safeEdit(ctx, ASSIGN_EXPIRED_MSG);
+
+    await bucketModel.setExpenseBuckets(user.id, state.txns[state.cursor].id, state.sel);
+    await advanceAssign(ctx, chatId, user, state);
+  });
+
+  // Advance without changing the current transaction's buckets.
+  instance.action('ab_skip', async (ctx) => {
+    const chatId = ctx.chat.id;
+    const user = await getLinkedUser(chatId);
+    const state = await getBucketSession(chatId);
+    await ctx.answerCbQuery().catch(() => {});
+    if (!user || !state) return safeEdit(ctx, ASSIGN_EXPIRED_MSG);
+
+    await advanceAssign(ctx, chatId, user, state);
+  });
+
+  instance.action('ab_cancel', async (ctx) => {
+    await clearBucketSession(ctx.chat.id);
+    await ctx.answerCbQuery().catch(() => {});
+    await safeEdit(ctx, '✖️ Assign cancelled.');
   });
 
   instance.on('text', async (ctx) => {
@@ -672,6 +822,7 @@ async function launch() {
       { command: 'networth', description: 'Assets minus liabilities' },
       { command: 'currency', description: 'Quick FX conversion' },
       { command: 'undo',     description: 'Remove your last confirmed expenses' },
+      { command: 'assign',   description: "Bucket a day's expenses one at a time" },
       { command: 'digest',   description: 'Set up a daily/weekly spending digest' },
       { command: 'ask',      description: 'Ask a question about your finances' },
       { command: 'help',     description: 'Show what I can do' },

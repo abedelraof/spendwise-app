@@ -242,6 +242,12 @@ async function runMigrations() {
       );
 
       ALTER TABLE telegram_sessions ADD COLUMN IF NOT EXISTS pending_new_categories JSONB;
+
+      CREATE TABLE IF NOT EXISTS telegram_bucket_sessions (
+        chat_id    BIGINT PRIMARY KEY REFERENCES telegram_links(chat_id) ON DELETE CASCADE,
+        state      JSONB NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
     `);
 
     console.log('[migrations] Schema up to date');
