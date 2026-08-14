@@ -340,6 +340,7 @@ function renderAssignStep(state, buckets) {
   const selNames = buckets.filter(b => sel.includes(b.id)).map(b => `${b.icon} ${b.name}`);
 
   const text =
+    (state.intro ? `${state.intro}\n\n` : '') +
     `🪣 Transaction ${state.cursor + 1} of ${state.txns.length} · ${state.label}\n\n` +
     `${t.label}\n${fmtAmount(t.amount)} ${t.currency}\n\n` +
     `Buckets: ${selNames.length ? selNames.join(', ') : 'none'}\n` +
@@ -360,7 +361,8 @@ async function advanceAssign(ctx, chatId, user, state) {
   state.cursor += 1;
   if (state.cursor >= state.txns.length) {
     await clearBucketSession(chatId);
-    return safeEdit(ctx, `✅ Done — assigned buckets for ${state.txns.length} transaction${state.txns.length === 1 ? '' : 's'} on ${state.label}.`);
+    return safeEdit(ctx, state.doneMsg
+      || `✅ Done — assigned buckets for ${state.txns.length} transaction${state.txns.length === 1 ? '' : 's'} on ${state.label}.`);
   }
   // Re-read the next expense's current buckets (it may have been touched earlier this session).
   const next = await expenseModel.findById(state.txns[state.cursor].id, user.id);
@@ -717,7 +719,30 @@ function createBot() {
     await execute('UPDATE telegram_links SET last_expense_ids = $1 WHERE chat_id = $2', [created.map(e => e.id), chatId]);
 
     const total = created.reduce((s, e) => s + Number(e.amount || 0), 0);
-    await ctx.editMessageText(`✅ Recorded ${created.length} expense${created.length === 1 ? '' : 's'}, total ${fmtAmount(total)} ${user.currency}.`);
+    const recorded = `✅ Recorded ${created.length} expense${created.length === 1 ? '' : 's'}, total ${fmtAmount(total)} ${user.currency}.`;
+
+    // If the user has buckets, chain straight into the assign stepper over the
+    // just-created expenses instead of ending on a plain confirmation.
+    const buckets = await bucketModel.findByUser(user.id);
+    if (!buckets.length) {
+      return ctx.editMessageText(recorded);
+    }
+
+    const state = {
+      label: 'just added', cursor: 0,
+      intro: recorded,
+      doneMsg: `${recorded}\n\n🪣 Buckets saved.`,
+      sel: created[0].bucket_ids || [],
+      txns: created.map(e => ({
+        id: e.id,
+        label: e.description || e.category_name || 'Expense',
+        amount: Number(e.amount),
+        currency: e.currency || user.currency,
+      })),
+    };
+    await saveBucketSession(chatId, state);
+    const { text, keyboard } = renderAssignStep(state, buckets);
+    await ctx.editMessageText(text, keyboard);
   });
 
   instance.action('cancel_expenses', async (ctx) => {
