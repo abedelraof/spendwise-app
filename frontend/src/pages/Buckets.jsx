@@ -120,7 +120,7 @@ function AssignTab({ buckets, currency }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { expenses } = await getExpenses(api, { startDate: start, endDate: end, limit: 500, sortBy: 'date', sortDir: 'DESC' });
+      const { expenses } = await getExpenses(api, { startDate: start, endDate: end, limit: 500, sortBy: 'id', sortDir: 'DESC' });
       setRows(expenses.map(e => ({ ...e, draft: e.bucket_ids || [], saving: false, dirty: false })));
     } catch { showToast('Failed to load transactions', 'error'); }
     finally { setLoading(false); }

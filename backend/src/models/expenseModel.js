@@ -73,7 +73,7 @@ function buildListQuery(userId, filters) {
     params.push(`%${tags}%`);
   }
 
-  const allowed = { date: 'e.date', amount: 'e.amount', created_at: 'e.created_at' };
+  const allowed = { date: 'e.date', amount: 'e.amount', created_at: 'e.created_at', id: 'e.id' };
   const orderCol = allowed[sortBy] || 'e.date';
   const dir = sortDir === 'ASC' ? 'ASC' : 'DESC';
 

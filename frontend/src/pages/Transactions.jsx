@@ -166,7 +166,7 @@ export default function Transactions() {
     categoryIds: [], subcategoryIds: [],
     minAmount: '', maxAmount: '',
     tags: '',
-    sortBy: 'date', sortDir: 'DESC',
+    sortBy: 'id', sortDir: 'DESC',
   });
   const [page, setPage]             = useState(0);
   const [expenses, setExpenses]     = useState([]);
@@ -221,7 +221,7 @@ export default function Transactions() {
   const clearFilters = () => {
     const p = presetDates('month');
     setDatePreset('month');
-    setFilters({ startDate: p.s, endDate: p.e, search: '', categoryIds: [], subcategoryIds: [], minAmount: '', maxAmount: '', tags: '', sortBy: 'date', sortDir: 'DESC' });
+    setFilters({ startDate: p.s, endDate: p.e, search: '', categoryIds: [], subcategoryIds: [], minAmount: '', maxAmount: '', tags: '', sortBy: 'id', sortDir: 'DESC' });
     setPage(0);
   };
   function applyPreset(id) {
