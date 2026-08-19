@@ -4,10 +4,11 @@
         reverse_proxy backend:3001
     }
 
-    # Everything else serves the React SPA
+    # Everything else: a real file, then a static directory's index.html
+    # (e.g. /word-lock/privacy), then the React SPA as the fallback
     handle {
         root * /srv
-        try_files {path} /index.html
+        try_files {path} {path}/index.html /index.html
         file_server
     }
 }
