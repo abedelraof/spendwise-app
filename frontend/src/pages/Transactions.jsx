@@ -197,6 +197,7 @@ export default function Transactions() {
   const [page, setPage]             = useState(0);
   const [expenses, setExpenses]     = useState([]);
   const [total, setTotal]           = useState(0);
+  const [sum, setSum]               = useState(0);
   const [categories, setCategories] = useState([]);
   const [buckets, setBuckets] = useState([]);
   const [loading, setLoading]       = useState(true);
@@ -223,6 +224,7 @@ export default function Transactions() {
       const data = await getExpenses(api, params);
       setExpenses(data.expenses);
       setTotal(data.total);
+      setSum(data.sum || 0);
       setSelected(new Set());
     } catch { showToast('Failed to load transactions', 'error'); }
     setLoading(false);
@@ -551,6 +553,19 @@ export default function Transactions() {
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-700/40 font-semibold">
+                      <td colSpan={3} className="px-4 py-3 text-xs text-gray-500 dark:text-slate-400 uppercase tracking-wider">
+                        Total{total > expenses.length ? ` · all ${total}` : ''}
+                      </td>
+                      <td className="hidden sm:table-cell"></td>
+                      <td className="px-4 py-3 text-right text-gray-900 dark:text-white whitespace-nowrap">
+                        {Number(sum).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                        <span className="text-xs font-normal text-gray-400"> {user?.currency || 'EGP'}</span>
+                      </td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             )}

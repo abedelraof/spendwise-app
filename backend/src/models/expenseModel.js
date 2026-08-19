@@ -86,11 +86,13 @@ const findByUser = async (userId, filters = {}) => {
     `${EXPENSE_SELECT} WHERE ${where} ORDER BY ${orderCol} ${dir} LIMIT $${idx} OFFSET $${idx + 1}`,
     [...params, limit, offset]
   );
-  const countRow = await queryOne(
-    `SELECT COUNT(*)::int AS cnt FROM expenses e WHERE ${where}`,
+  // Count + home-currency sum over the WHOLE filtered set (not just this page).
+  const aggRow = await queryOne(
+    `SELECT COUNT(*)::int AS cnt, COALESCE(SUM(e.amount * e.exchange_rate), 0)::float AS sum
+     FROM expenses e WHERE ${where}`,
     params
   );
-  return { expenses: rows, total: countRow.cnt };
+  return { expenses: rows, total: aggRow.cnt, sum: aggRow.sum };
 };
 
 const findAll = (userId, filters = {}) => {
