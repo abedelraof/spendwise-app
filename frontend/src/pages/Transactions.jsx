@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Trash2, Pencil, CreditCard, ChevronDown, X, ArrowLeftRight, Repeat2, Plus, RefreshCw, ChevronUp, ChevronsUpDown } from 'lucide-react';
+import { Trash2, Pencil, CreditCard, ChevronDown, X, ArrowLeftRight, Repeat2, Plus, RefreshCw, ChevronUp, ChevronsUpDown, Search } from 'lucide-react';
 import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import { getExpenses, deleteExpense, bulkDeleteExpenses, updateExpense } from '../api/expensesApi';
@@ -62,6 +62,7 @@ const emptyRecurringForm = {
 
 function CategoryPicker({ categories, categoryIds, subcategoryIds, onChange }) {
   const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
   const ref = useRef(null);
 
   useEffect(() => {
@@ -70,7 +71,21 @@ function CategoryPicker({ categories, categoryIds, subcategoryIds, onChange }) {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
+  useEffect(() => { if (!open) setQ(''); }, [open]);
+
   const totalSelected = categoryIds.length + subcategoryIds.length;
+
+  // Filter by name: keep a category if its name matches or any subcategory matches.
+  // A category that matches by its own name keeps all its subcategories; otherwise
+  // only the matching subcategories are shown.
+  const needle = q.trim().toLowerCase();
+  const filtered = categories
+    .map(c => {
+      const catMatch = c.name.toLowerCase().includes(needle);
+      const subs = (c.subcategories || []).filter(s => catMatch || s.name.toLowerCase().includes(needle));
+      return { cat: c, subs, show: !needle || catMatch || subs.length > 0 };
+    })
+    .filter(x => x.show);
 
   const label = (() => {
     if (!totalSelected) return <span className="text-gray-400 dark:text-slate-500">All categories</span>;
@@ -117,8 +132,18 @@ function CategoryPicker({ categories, categoryIds, subcategoryIds, onChange }) {
 
       {open && (
         <div className="absolute top-full left-0 mt-1 w-56 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl shadow-lg z-50 overflow-hidden">
+          <div className="p-2 border-b border-gray-100 dark:border-slate-700">
+            <div className="relative">
+              <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Search categories…"
+                className="input !py-1.5 !pl-7 !text-xs w-full" />
+            </div>
+          </div>
           <div className="max-h-60 overflow-y-auto py-1">
-            {categories.map(c => (
+            {filtered.length === 0 && (
+              <p className="px-3 py-3 text-xs text-gray-400 dark:text-slate-500 text-center">No matches</p>
+            )}
+            {filtered.map(({ cat: c, subs }) => (
               <div key={c.id}>
                 <label className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-700/60 cursor-pointer">
                   <input type="checkbox" checked={categoryIds.includes(c.id)}
@@ -128,7 +153,7 @@ function CategoryPicker({ categories, categoryIds, subcategoryIds, onChange }) {
                     {c.icon && <span>{c.icon}</span>}{c.name}
                   </span>
                 </label>
-                {(c.subcategories || []).map(s => (
+                {subs.map(s => (
                   <label key={s.id} className="flex items-center gap-2 pl-7 pr-3 py-1.5 hover:bg-gray-50 dark:hover:bg-slate-700/60 cursor-pointer">
                     <input type="checkbox" checked={subcategoryIds.includes(s.id)}
                       onChange={() => toggleSub(s.id)}
