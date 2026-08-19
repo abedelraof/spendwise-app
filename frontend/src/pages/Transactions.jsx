@@ -12,6 +12,7 @@ import Spinner from '../components/common/Spinner';
 import EmptyState from '../components/common/EmptyState';
 import Modal from '../components/common/Modal';
 import TagInput from '../components/common/TagInput';
+import BucketPicker from '../components/common/BucketPicker';
 import ParsedExpenseConfirm from '../components/dashboard/ParsedExpenseConfirm';
 
 const PAGE_SIZE = 20;
@@ -188,7 +189,7 @@ export default function Transactions() {
   const [filters, setFilters] = useState({
     startDate: monthStart(), endDate: today(),
     search: searchParams.get('search') || '',
-    categoryIds: [], subcategoryIds: [],
+    categoryIds: [], subcategoryIds: [], bucketIds: [],
     minAmount: '', maxAmount: '',
     tags: '',
     sortBy: 'id', sortDir: 'DESC',
@@ -216,6 +217,7 @@ export default function Transactions() {
         ...filters,
         categoryIds: filters.categoryIds.join(',') || undefined,
         subcategoryIds: filters.subcategoryIds.join(',') || undefined,
+        bucketIds: filters.bucketIds.join(',') || undefined,
         limit: PAGE_SIZE, offset: page * PAGE_SIZE,
       };
       const data = await getExpenses(api, params);
@@ -246,7 +248,7 @@ export default function Transactions() {
   const clearFilters = () => {
     const p = presetDates('month');
     setDatePreset('month');
-    setFilters({ startDate: p.s, endDate: p.e, search: '', categoryIds: [], subcategoryIds: [], minAmount: '', maxAmount: '', tags: '', sortBy: 'id', sortDir: 'DESC' });
+    setFilters({ startDate: p.s, endDate: p.e, search: '', categoryIds: [], subcategoryIds: [], bucketIds: [], minAmount: '', maxAmount: '', tags: '', sortBy: 'id', sortDir: 'DESC' });
     setPage(0);
   };
   function applyPreset(id) {
@@ -384,9 +386,15 @@ export default function Transactions() {
               }),
             ].filter(Boolean);
 
+            const bucketChips = filters.bucketIds.map(id => {
+              const b = buckets.find(b => b.id === id);
+              return b ? { key: `bkt:${id}`, label: `${b.icon ?? ''} ${b.name}`.trim(), clear: () => { setFilters(f => ({ ...f, bucketIds: f.bucketIds.filter(x => x !== id) })); setPage(0); } } : null;
+            }).filter(Boolean);
+
             const chips = [
               filters.search    && { key: 'search', label: `"${filters.search}"`,    clear: () => applyFilter('search', '') },
               ...catChips,
+              ...bucketChips,
               filters.minAmount && { key: 'min',    label: `Min ${filters.minAmount}`, clear: () => applyFilter('minAmount', '') },
               filters.maxAmount && { key: 'max',    label: `Max ${filters.maxAmount}`, clear: () => applyFilter('maxAmount', '') },
               filters.tags      && { key: 'tags',   label: `#${filters.tags}`,         clear: () => applyFilter('tags', '') },
@@ -437,6 +445,11 @@ export default function Transactions() {
                   </div>
                   <CategoryPicker categories={categories} categoryIds={filters.categoryIds} subcategoryIds={filters.subcategoryIds}
                     onChange={(catIds, subIds) => { setFilters(f => ({...f, categoryIds: catIds, subcategoryIds: subIds})); setPage(0); }} />
+                  {buckets.length > 0 && (
+                    <BucketPicker buckets={buckets} value={filters.bucketIds} placeholder="All buckets"
+                      className="flex-1 min-w-[130px]"
+                      onChange={ids => { setFilters(f => ({ ...f, bucketIds: ids })); setPage(0); }} />
+                  )}
                   <input className="input !py-1.5 !text-xs w-32" placeholder="# tag" value={filters.tags}
                     onChange={e => applyFilter('tags', e.target.value)} />
                 </div>
