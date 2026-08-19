@@ -368,7 +368,7 @@ export default function Transactions() {
             ].filter(Boolean);
 
             return (
-              <div className="card overflow-hidden">
+              <div className="card">
               <div className="px-4 py-3 border-b border-gray-100 dark:border-slate-700/60 flex items-center gap-2">
                 <span className="text-sm font-semibold text-gray-900 dark:text-white">Filters</span>
                 <span className="text-xs text-gray-400 dark:text-slate-500">
