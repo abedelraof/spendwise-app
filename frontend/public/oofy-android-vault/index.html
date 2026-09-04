@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OOFY Android Vault — Free Android Backup Tool for Windows</title>
+<meta name="description" content="Back up photos, documents, contacts and SMS from any Android phone to your own drive over USB. Free, open, no account, no cloud — your files never leave your PC." />
+<link rel="canonical" href="https://expensebeam.com/oofy-android-vault/" />
+<meta name="robots" content="index, follow" />
+
+<meta property="og:type" content="website" />
+<meta property="og:title" content="OOFY Android Vault — Free Android Backup Tool for Windows" />
+<meta property="og:description" content="Back up photos, documents, contacts and SMS from any Android phone to your own drive over USB. Free, open, no account, no cloud." />
+<meta property="og:url" content="https://expensebeam.com/oofy-android-vault/" />
+<meta property="og:image" content="https://expensebeam.com/oofy-android-vault/screenshot.jpg" />
+<meta property="og:site_name" content="OOFY Android Vault" />
+
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="OOFY Android Vault — Free Android Backup Tool for Windows" />
+<meta name="twitter:description" content="Back up photos, documents, contacts and SMS from any Android phone to your own drive over USB. Free, open, no account, no cloud." />
+<meta name="twitter:image" content="https://expensebeam.com/oofy-android-vault/screenshot.jpg" />
+
+<link rel="icon" href="./favicon.ico" sizes="any" />
+<link rel="icon" type="image/png" href="./icon.png" />
+<link rel="apple-touch-icon" href="./icon.png" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Stencil+Display:wght@600;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "OOFY Android Vault",
+  "operatingSystem": "Windows 10, Windows 11",
+  "applicationCategory": "UtilitiesApplication",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "description": "Back up photos, documents, contacts and SMS from any Android phone to your own drive over USB. Free, open, no account, no cloud.",
+  "url": "https://expensebeam.com/oofy-android-vault/",
+  "downloadUrl": "https://expensebeam.com/oofy-android-vault/OOFYAndroidVault-Setup.exe",
+  "softwareVersion": "1.0.0",
+  "screenshot": "https://expensebeam.com/oofy-android-vault/screenshot.jpg"
+}
+</script>
+
+<style>
+  :root {
+    --ground: #ECEEF3;
+    --surface: #FFFFFF;
+    --surface-2: #F5F6F9;
+    --border: #D6DAE3;
+    --text: #171B26;
+    --text-dim: #5B6474;
+    --brass: #8A6A2E;
+    --brass-bright: #B8903F;
+    --brass-ink: #FFFFFF;
+    --steel: #3B4A63;
+    --shadow: 0 1px 2px rgba(23,27,38,0.06), 0 8px 24px rgba(23,27,38,0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #10151F;
+      --surface: #1B2333;
+      --surface-2: #202A3D;
+      --border: #313E58;
+      --text: #EDEFF4;
+      --text-dim: #9AA5BA;
+      --brass: #C9A15A;
+      --brass-bright: #E4C486;
+      --brass-ink: #1B1300;
+      --steel: #7C8AA0;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 12px 32px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #10151F;
+    --surface: #1B2333;
+    --surface-2: #202A3D;
+    --border: #313E58;
+    --text: #EDEFF4;
+    --text-dim: #9AA5BA;
+    --brass: #C9A15A;
+    --brass-bright: #E4C486;
+    --brass-ink: #1B1300;
+    --steel: #7C8AA0;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 12px 32px rgba(0,0,0,0.35);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--text);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  img { max-width: 100%; height: auto; display: block; }
+  a { color: inherit; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  h1, h2, h3 {
+    font-family: "Big Shoulders Stencil Display", "Arial Narrow", sans-serif;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.01em;
+    text-wrap: balance;
+    margin: 0;
+    color: var(--text);
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  section { padding: 96px 0; }
+  @media (max-width: 720px) { section { padding: 64px 0; } }
+
+  /* ---------- Header ---------- */
+  header.site {
+    position: sticky; top: 0; z-index: 20;
+    background: color-mix(in srgb, var(--ground) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; max-width: 1120px; margin: 0 auto; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; text-decoration: none; }
+  .brand img { width: 30px; height: 30px; border-radius: 7px; }
+  .nav-links { display: flex; align-items: center; gap: 28px; font-size: 15px; color: var(--text-dim); }
+  .nav-links a { text-decoration: none; }
+  .nav-links a:hover { color: var(--text); }
+  @media (max-width: 640px) { .nav-links .hide-mobile { display: none; } }
+
+  /* ---------- Buttons ---------- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    padding: 14px 26px; border-radius: 8px; font-weight: 600; font-size: 15.5px;
+    text-decoration: none; border: 1px solid transparent; cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  @media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
+  .btn:active { transform: translateY(1px); }
+  .btn-brass {
+    background: linear-gradient(180deg, var(--brass-bright), var(--brass));
+    color: var(--brass-ink);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 6px 16px rgba(138,106,46,0.35);
+  }
+  .btn-brass:hover { box-shadow: 0 1px 0 rgba(255,255,255,0.3) inset, 0 8px 22px rgba(138,106,46,0.45); }
+  .btn-ghost {
+    background: transparent; color: var(--text); border-color: var(--border);
+  }
+  .btn-ghost:hover { border-color: var(--steel); }
+  .btn-sm { padding: 9px 16px; font-size: 14px; border-radius: 7px; }
+
+  /* ---------- Hero ---------- */
+  .hero {
+    position: relative;
+    overflow: hidden;
+    padding: 88px 0 64px;
+    background-image:
+      repeating-linear-gradient(0deg, color-mix(in srgb, var(--border) 70%, transparent) 0 1px, transparent 1px 88px),
+      repeating-linear-gradient(90deg, color-mix(in srgb, var(--border) 70%, transparent) 0 1px, transparent 1px 88px),
+      radial-gradient(circle at 44px 44px, color-mix(in srgb, var(--brass) 55%, transparent) 0 2.5px, transparent 3px);
+    background-size: 88px 88px, 88px 88px, 88px 88px;
+    background-position: center top;
+    -webkit-mask-image: linear-gradient(180deg, black 0%, black 55%, transparent 100%);
+    mask-image: linear-gradient(180deg, black 0%, black 55%, transparent 100%);
+  }
+  .hero-inner { position: relative; -webkit-mask-image: none; mask-image: none; }
+  .hero .wrap { position: relative; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: "IBM Plex Mono", monospace; font-size: 12.5px; letter-spacing: 0.14em;
+    color: var(--brass); text-transform: uppercase; margin-bottom: 22px;
+  }
+  .eyebrow::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--brass); display: inline-block; }
+  .hero h1 {
+    font-size: clamp(42px, 7vw, 84px);
+    line-height: 0.96;
+    max-width: 15ch;
+  }
+  .hero h1 em { font-style: normal; color: var(--brass); }
+  .hero p.lede {
+    font-size: clamp(17px, 2vw, 20px);
+    color: var(--text-dim);
+    max-width: 46ch;
+    margin: 26px 0 36px;
+  }
+  .hero-ctas { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .hero-meta {
+    margin-top: 28px; display: flex; flex-wrap: wrap; gap: 8px 18px;
+    font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--text-dim);
+  }
+  .hero-meta span { white-space: nowrap; }
+
+  /* ---------- Screenshot ---------- */
+  .shot-frame {
+    position: relative;
+    border-radius: 14px;
+    padding: 14px;
+    background: linear-gradient(155deg, var(--steel), color-mix(in srgb, var(--steel) 60%, black));
+    box-shadow: var(--shadow);
+  }
+  .shot-frame::before {
+    content: "";
+    position: absolute; left: -9px; top: 50%; transform: translateY(-50%);
+    width: 18px; height: 64px; border-radius: 9px;
+    background: linear-gradient(180deg, var(--brass-bright), var(--brass));
+    box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+  }
+  .shot-frame img { border-radius: 8px; border: 1px solid rgba(0,0,0,0.2); }
+  .shot-caption { text-align: center; color: var(--text-dim); font-size: 14px; margin-top: 18px; }
+
+  /* ---------- Section headers ---------- */
+  .section-head { max-width: 60ch; margin-bottom: 48px; }
+  .section-head .eyebrow { margin-bottom: 14px; }
+  .section-head h2 { font-size: clamp(30px, 4vw, 44px); }
+  .section-head p { color: var(--text-dim); font-size: 17px; margin-top: 14px; }
+
+  /* ---------- Feature grid (deposit-box tiles) ---------- */
+  .features {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px;
+  }
+  @media (max-width: 860px) { .features { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .features { grid-template-columns: 1fr; } }
+  .feature {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 26px 22px;
+  }
+  .feature::after {
+    content: "";
+    position: absolute; top: 20px; right: 20px;
+    width: 9px; height: 9px; border-radius: 50%;
+    background: color-mix(in srgb, var(--brass) 70%, transparent);
+  }
+  .feature h3 {
+    font-family: "IBM Plex Sans", sans-serif; text-transform: none; letter-spacing: 0;
+    font-size: 18px; font-weight: 700; margin-bottom: 8px;
+  }
+  .feature p { color: var(--text-dim); font-size: 15px; margin: 0; }
+
+  /* ---------- How it works ---------- */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; counter-reset: step; }
+  @media (max-width: 780px) { .steps { grid-template-columns: 1fr; gap: 28px; } }
+  .step { position: relative; padding-left: 56px; }
+  .step .num {
+    position: absolute; left: 0; top: -4px;
+    font-family: "Big Shoulders Stencil Display", sans-serif; font-size: 40px; font-weight: 800;
+    color: var(--brass); line-height: 1;
+  }
+  .step h3 { font-family: "IBM Plex Sans", sans-serif; text-transform: none; letter-spacing: 0; font-size: 18px; margin-bottom: 8px; }
+  .step p { color: var(--text-dim); font-size: 15px; margin: 0; }
+
+  /* ---------- Spec sheet ---------- */
+  .spec {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .spec-row {
+    display: grid; grid-template-columns: 220px 1fr;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    font-size: 15px;
+  }
+  .spec-row:last-child { border-bottom: none; }
+  .spec-row dt { font-family: "IBM Plex Mono", monospace; color: var(--text-dim); font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .spec-row dd { margin: 0; }
+  @media (max-width: 560px) { .spec-row { grid-template-columns: 1fr; gap: 4px; } }
+
+  /* ---------- Donation ---------- */
+  .donate {
+    background: linear-gradient(155deg, var(--steel), color-mix(in srgb, var(--steel) 55%, black));
+    border-radius: 16px;
+    padding: 56px 40px;
+    text-align: center;
+    color: #EDEFF4;
+  }
+  .donate .coin {
+    width: 56px; height: 56px; border-radius: 50%; margin: 0 auto 20px;
+    background: linear-gradient(155deg, var(--brass-bright), var(--brass));
+    display: flex; align-items: center; justify-content: center;
+    font-family: "Big Shoulders Stencil Display", sans-serif; font-weight: 800; font-size: 22px;
+    color: var(--brass-ink);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.3);
+  }
+  .donate h2 { font-size: clamp(26px, 3.4vw, 36px); color: #F5F1E8; }
+  .donate p { color: #C7CEDC; max-width: 48ch; margin: 14px auto 28px; }
+  .donate .btn-ghost { color: #EDEFF4; }
+
+  /* ---------- Footer ---------- */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 40px 0;
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+  .footer-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; }
+  .footer-links { display: flex; gap: 20px; }
+  .footer-links a { text-decoration: none; }
+  .footer-links a:hover { color: var(--text); }
+
+  :focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+</style>
+</head>
+<body>
+
+  <header class="site">
+    <nav class="nav">
+      <a class="brand" href="#top">
+        <img src="./icon.png" alt="" width="30" height="30" />
+        OOFY Android Vault
+      </a>
+      <div class="nav-links">
+        <a class="hide-mobile" href="#features">Features</a>
+        <a class="hide-mobile" href="#how">How it works</a>
+        <a class="hide-mobile" href="#requirements">Requirements</a>
+        <a href="#download" class="btn btn-brass btn-sm">Download</a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="wrap hero-inner">
+        <p class="eyebrow">Free · Windows 10/11 · No cloud, no account</p>
+        <h1>Every photo.<br>Every file.<br><em>Your vault.</em></h1>
+        <p class="lede">OOFY Android Vault copies photos, documents, contacts and messages from any Android phone straight to a drive you choose — over a USB cable, with nothing uploaded anywhere.</p>
+        <div class="hero-ctas">
+          <a href="#download" class="btn btn-brass">Download for Windows — Free</a>
+          <a href="#how" class="btn btn-ghost">See how it works ↓</a>
+        </div>
+        <div class="hero-meta mono">
+          <span>v1.0.0</span>
+          <span>·</span>
+          <span>~65 MB</span>
+          <span>·</span>
+          <span>Windows 10 / 11 (64-bit)</span>
+          <span>·</span>
+          <span>USB required</span>
+        </div>
+      </div>
+    </section>
+
+    <section aria-label="Screenshot">
+      <div class="wrap">
+        <div class="shot-frame">
+          <img src="./screenshot.jpg" width="1400" height="935" alt="OOFY Android Vault window showing backup destination, file type and folder selection, and a live activity log" loading="lazy" />
+        </div>
+        <p class="shot-caption">Pick a destination, choose what to back up, and watch every file logged as it copies.</p>
+      </div>
+    </section>
+
+    <section id="features">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="eyebrow">What it backs up</p>
+          <h2>Nothing left behind</h2>
+          <p>Most backup tools only grab the camera roll. OOFY Android Vault is built to catch everything, wherever an app decided to hide it.</p>
+        </div>
+        <div class="features">
+          <div class="feature">
+            <h3>Whole-storage search</h3>
+            <p>Optionally scans every folder on the phone — not just Camera and Downloads — so nothing gets missed.</p>
+          </div>
+          <div class="feature">
+            <h3>Photos, docs &amp; video</h3>
+            <p>Images, PDFs, Office files, screenshots and video, filtered by type or matched with your own custom extensions.</p>
+          </div>
+          <div class="feature">
+            <h3>Contacts &amp; messages</h3>
+            <p>Exports contacts to a standard .vcf file and SMS history to .csv, alongside your media.</p>
+          </div>
+          <div class="feature">
+            <h3>Mirrors your folders</h3>
+            <p>Backed-up files land in the same folder layout as your phone, so the drive stays easy to browse.</p>
+          </div>
+          <div class="feature">
+            <h3>Fast repeat backups</h3>
+            <p>Already-copied files are skipped automatically — the second backup only moves what actually changed.</p>
+          </div>
+          <div class="feature">
+            <h3>100% local</h3>
+            <p>No sign-in, no cloud storage, no telemetry. Files travel over USB straight to the drive you pick.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="how">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="eyebrow">Three steps</p>
+          <h2>How it works</h2>
+        </div>
+        <div class="steps">
+          <div class="step">
+            <span class="num">1</span>
+            <h3>Connect your phone</h3>
+            <p>Plug your Android phone in over USB and enable USB debugging when prompted.</p>
+          </div>
+          <div class="step">
+            <span class="num">2</span>
+            <h3>Choose destination &amp; contents</h3>
+            <p>Pick a folder or drive, then choose which file types, folders and personal data to include.</p>
+          </div>
+          <div class="step">
+            <span class="num">3</span>
+            <h3>Start backup</h3>
+            <p>Watch live progress and a full activity log as every file is copied, skipped, or flagged.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="requirements">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="eyebrow">Before you install</p>
+          <h2>What you'll need</h2>
+        </div>
+        <dl class="spec">
+          <div class="spec-row">
+            <dt>Operating system</dt>
+            <dd>Windows 10 or 11, 64-bit</dd>
+          </div>
+          <div class="spec-row">
+            <dt>Phone connection</dt>
+            <dd>A USB cable, with USB debugging enabled once on the phone (Settings → About phone → tap "Build number" 7 times → Developer options → USB debugging)</dd>
+          </div>
+          <div class="spec-row">
+            <dt>Android SDK Platform Tools</dt>
+            <dd>Required for the USB connection to work — OOFY Android Vault will tell you if it's missing and link you to it</dd>
+          </div>
+          <div class="spec-row">
+            <dt>Account or sign-in</dt>
+            <dd>None. There is no account, no cloud storage and nothing is sent anywhere.</dd>
+          </div>
+        </dl>
+      </div>
+    </section>
+
+    <section id="download">
+      <div class="wrap">
+        <div class="donate">
+          <div class="coin">$</div>
+          <h2>Free to keep. Coffee optional.</h2>
+          <p>OOFY Android Vault is free, with no ads and no catch. If it saved your photos, a coffee helps keep it that way.</p>
+          <div class="hero-ctas" style="justify-content:center;">
+            <a href="./OOFYAndroidVault-Setup.exe" class="btn btn-ghost" style="border-color: rgba(237,239,244,0.35);">Download for Windows — Free</a>
+            <a href="https://buymeacoffee.com/oofyapps" class="btn btn-brass" target="_blank" rel="noopener">Buy me a coffee</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap footer-row">
+      <span>© 2026 OOFY. Not affiliated with Google or Android.</span>
+      <div class="footer-links">
+        <a href="#top">Back to top</a>
+        <a href="https://buymeacoffee.com/oofyapps" target="_blank" rel="noopener">Donate</a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

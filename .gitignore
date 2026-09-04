@@ -50,3 +50,6 @@ coverage/
 *.pid
 *.seed
 *.pid.lock
+
+# Downloadable app binaries (too large for git history; copied to the server directly on each release)
+frontend/public/oofy-android-vault/*.exe
