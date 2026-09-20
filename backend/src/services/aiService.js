@@ -154,13 +154,26 @@ Valid category names: ${JSON.stringify(userCategoryNames)}
 5. When asking, you may suggest 2-4 short "quick_replies" the user could tap instead of typing (e.g. likely category names). Omit or use [] when nothing sensible fits.
 6. When concluding, write one short friendly sentence and list every expense discussed in the conversation (not just the most recent one).
 
-Respond with ONLY a single JSON object — no markdown, no code fences, no explanation — in exactly one of these two shapes:
+## Deletion requests (status=delete_intent)
+The user may instead ask to DELETE existing transactions rather than log new ones (e.g. "delete my coffee expenses last week", "clear this month's transactions", "remove everything from September").
+
+Classify a turn as delete_intent ONLY on unambiguous deletion language — "delete", "clear", "remove", "get rid of" (or a clear synonym) combined with a scope. A question about spending ("what did I spend this month", "how much on coffee") is a READ query, not deletion — NEVER classify it as delete_intent. If the deletion scope is ambiguous (no clear date range or category), respond with status=asking and ask a clarifying question instead of guessing — under-triggering delete_intent is far safer than over-triggering, since it drives an irreversible action downstream.
+
+When you do classify delete_intent, resolve a filter:
+- start_date / end_date — ISO YYYY-MM-DD (date only, no time), computed relative to today (${today}). Use null for a field with no lower/upper bound the user implied (rare — most deletion requests imply a bounded range like "this month" or "last week").
+- category — if the user named a category or something that maps to one, resolve it to the EXACT string from the user's valid category names above (case-sensitive match to the list); if nothing in the input maps to a real category, use null. Never invent a category name that isn't in the user's list.
+- message — a short, human-readable confirmation-style summary of the resolved scope, e.g. "You want to clear all transactions from September 2026?" or "Delete your Food & Dining expenses from the last 7 days?". This is shown as a chat bubble, NOT itself a confirmation dialog — the client always independently counts the real matches and shows its own Cancel/Delete dialog afterward, so you never need to know or state a count.
+
+Respond with ONLY a single JSON object — no markdown, no code fences, no explanation — in exactly one of these three shapes:
 
 Still gathering info:
 {"status":"asking","message":"<one short question>","quick_replies":["<option>","<option>"]}
 
-Done:
-{"status":"concluded","message":"<short friendly summary>","expenses":[{"description":"string","amount":number,"currency":"${userCurrency}","category":"string","date":"YYYY-MM-DDT00:00:00.000Z"}]}`;
+Done logging:
+{"status":"concluded","message":"<short friendly summary>","expenses":[{"description":"string","amount":number,"currency":"${userCurrency}","category":"string","date":"YYYY-MM-DDT00:00:00.000Z"}]}
+
+Deletion request resolved:
+{"status":"delete_intent","message":"<confirmation-style summary of scope>","filter":{"start_date":"YYYY-MM-DD"|null,"end_date":"YYYY-MM-DD"|null,"category":"string"|null}}`;
 }
 
 function buildInsightPrompt(data, userCurrency) {
@@ -312,6 +325,8 @@ async function answerQuestion(question, context, encryptedApiKey, currency) {
   return msg.content[0].text.trim();
 }
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 async function converseExpenses(messages, userCurrency, categories = []) {
   const client = await getClient(null);
   const msg = await client.messages.create({
@@ -321,6 +336,23 @@ async function converseExpenses(messages, userCurrency, categories = []) {
     messages: messages.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
   });
   const result = extractJsonObj(msg.content[0].text);
+
+  if (result.status === 'delete_intent') {
+    const f = result.filter && typeof result.filter === 'object' ? result.filter : {};
+    const validCategoryNames = new Set(categories.map(c => c.name.toLowerCase()));
+    // Never trust the model's category/date strings blindly — re-check against
+    // the real category list and date format before this filter reaches the client.
+    const category = typeof f.category === 'string' && validCategoryNames.has(f.category.toLowerCase())
+      ? categories.find(c => c.name.toLowerCase() === f.category.toLowerCase()).name
+      : null;
+    const start_date = typeof f.start_date === 'string' && ISO_DATE_RE.test(f.start_date) ? f.start_date : null;
+    const end_date = typeof f.end_date === 'string' && ISO_DATE_RE.test(f.end_date) ? f.end_date : null;
+    if (typeof result.message !== 'string' || !result.message.trim()) {
+      return { status: 'asking', message: 'What would you like to delete, and for what time range?', quick_replies: [] };
+    }
+    return { status: 'delete_intent', message: result.message, filter: { start_date, end_date, category } };
+  }
+
   if (result.status !== 'asking' && result.status !== 'concluded') {
     return { status: 'asking', message: 'Could you tell me more about that expense?', quick_replies: [] };
   }

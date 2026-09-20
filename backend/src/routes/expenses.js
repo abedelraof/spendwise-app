@@ -71,6 +71,34 @@ router.delete('/bulk', auth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ID-based batch delete for the AI delete_intent flow: the client resolves and
+// pins the exact ids itself (via GET /expenses) before ever calling this, so
+// partial failures are reported back rather than thrown as an error.
+router.delete('/batch', auth, async (req, res, next) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || !ids.length || ids.length > 500) {
+      return res.status(400).json({ error: 'ids array required (1-500 items)' });
+    }
+
+    const numericIds = [];
+    const failed_ids = [];
+    for (const id of ids) {
+      const n = Number(id);
+      if (Number.isInteger(n)) numericIds.push(n); else failed_ids.push(String(id));
+    }
+
+    const deletedIds = numericIds.length ? await expenseModel.removeMany(numericIds, req.user.userId) : [];
+    const deletedSet = new Set(deletedIds);
+    for (const id of numericIds) {
+      if (!deletedSet.has(id)) failed_ids.push(String(id));
+    }
+
+    if (deletedIds.length) await invalidateInsightCache(req.user.userId);
+    res.json({ deleted_count: deletedIds.length, failed_ids });
+  } catch (err) { next(err); }
+});
+
 router.delete('/:id', auth, async (req, res, next) => {
   try {
     const result = await expenseModel.remove(req.params.id, req.user.userId);

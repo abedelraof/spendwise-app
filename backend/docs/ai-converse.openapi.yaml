@@ -1,12 +1,17 @@
 openapi: 3.0.3
 info:
-  title: ExpenseBeam AI — Conversational Expense Logging
+  title: ExpenseBeam AI — Conversational Expense Logging & Deletion
   description: >
-    Spec for the new `POST /api/ai/converse` endpoint, plus the two existing
-    `/api/ai` endpoints it shares auth/quota/caching behavior with, for context.
-    Stateless: the client resends the full message history each turn; there is
-    no server-side session.
-  version: "1.0.0"
+    Spec for `POST /api/ai/converse`, plus the two existing `/api/ai`
+    endpoints it shares auth/quota/caching behavior with, for context. As of
+    1.1.0, converse also resolves deletion requests via a third `status`,
+    `delete_intent`, paired with the new `DELETE /api/expenses/batch`
+    endpoint. Stateless: the client resends the full message history each
+    turn; there is no server-side session. The client independently
+    re-verifies the exact matching transactions and count via
+    `GET /expenses` before ever deleting anything — this endpoint only
+    needs to resolve *intent* and a *filter*, never a count.
+  version: "1.1.0"
 
 servers:
   - url: http://localhost:3001/api
@@ -20,15 +25,33 @@ security:
 paths:
   /ai/converse:
     post:
-      summary: Conversational expense logging turn
+      summary: Conversational expense logging / deletion turn
       description: >
         Send the full conversation so far (the client's own static opening
         greeting is NOT included — `messages` starts at the first real user
-        turn). Returns either a clarifying question or a final list of parsed
-        expenses. Counts against the same 100/month AI quota as `/ai/parse`
-        and `/ai/ask`, with the same 24h response cache (keyed on the full
+        turn). Returns one of three states: still gathering info for a new
+        expense (`asking`), a finished expense list ready to save
+        (`concluded`), or a resolved deletion request (`delete_intent`).
+        Counts against the same 100/month AI quota as `/ai/parse` and
+        `/ai/ask`, with the same 24h response cache (keyed on the full
         serialized message history, so replaying an identical conversation
         returns a cached hit and does not consume quota).
+
+
+        **Safety-critical prompting note for `delete_intent`**: the backend
+        classifies a turn as `delete_intent` ONLY on unambiguous deletion
+        language ("delete", "clear", "remove", "get rid of" + a scope). A
+        message like "what did I spend this month" is a read query, not a
+        deletion request, and is never classified as `delete_intent`. When
+        intent is ambiguous, the response is `asking` with a clarifying
+        question instead of guessing — this endpoint drives an irreversible
+        action downstream, so under-triggering is far safer than
+        over-triggering. As defense in depth, `filter.category` is always
+        re-validated server-side against the user's real category list
+        (case-insensitive match, normalized to the stored name) and
+        `filter.start_date`/`filter.end_date` are validated as `YYYY-MM-DD`
+        — anything that doesn't match is nulled out rather than passed
+        through from the model's raw output.
       operationId: converseExpenses
       tags: [AI]
       requestBody:
@@ -54,12 +77,23 @@ paths:
                       content: Got it — how much was the coffee?
                     - role: user
                       content: 45 EGP, lunch was 320
+              deleteRequest:
+                summary: Deletion request
+                value:
+                  messages:
+                    - role: user
+                      content: clear this month's transactions
+              deleteRequestWithCategory:
+                summary: Deletion request scoped by date + category
+                value:
+                  messages:
+                    - role: user
+                      content: delete my coffee expenses last week
       responses:
         '200':
           description: >
-            Either the assistant is still gathering info (`asking`) or has
-            enough to conclude (`concluded`). See `ConverseResponse` for the
-            discriminated shape.
+            Discriminated by `status`. See `ConverseResponse` for the full
+            shape, including the `delete_intent` branch.
           content:
             application/json:
               schema:
@@ -71,8 +105,8 @@ paths:
                     status: asking
                     message: What category for the lunch?
                     quick_replies: ["Food & Dining", "Other"]
-                concludedNoQuota:
-                  summary: Done — matches the shape ConfirmExpensesScreen already parses
+                concluded:
+                  summary: Expense logging done — matches the shape ConfirmExpensesScreen already parses
                   value:
                     status: concluded
                     message: "Here's what I found:"
@@ -87,6 +121,24 @@ paths:
                         currency: EGP
                         category: Food & Dining
                         date: "2026-09-20T00:00:00.000Z"
+                deleteIntentDateRange:
+                  summary: Deletion request resolved to a date range
+                  value:
+                    status: delete_intent
+                    message: You want to clear all transactions from September 2026?
+                    filter:
+                      start_date: "2026-09-01"
+                      end_date: "2026-09-30"
+                      category: null
+                deleteIntentWithCategory:
+                  summary: Deletion request resolved to a date range + category
+                  value:
+                    status: delete_intent
+                    message: Delete your Food & Dining expenses from the last 7 days?
+                    filter:
+                      start_date: "2026-09-13"
+                      end_date: "2026-09-20"
+                      category: Food & Dining
                 cachedHit:
                   summary: Identical conversation replayed within 24h (does not consume quota)
                   value:
@@ -174,6 +226,69 @@ paths:
                   answer: { type: string }
                   cached: { type: boolean }
 
+  /expenses/batch:
+    delete:
+      summary: Delete multiple expenses by id in one call
+      description: >
+        ID-based rather than filter-based on purpose: the client always
+        resolves the exact matching ids itself first (via `GET /expenses`)
+        to show the user a verified count before confirming, so it hands
+        this endpoint that same pinned id list rather than asking the
+        server to re-resolve a filter (which risks matching a different
+        set if data changed between the count-check and the delete call).
+        Ownership is enforced server-side (`user_id` on every row deleted);
+        ids that don't exist or don't belong to the caller are reported in
+        `failed_ids` rather than causing the whole call to fail. Distinct
+        from the pre-existing `DELETE /expenses/bulk` (still used by the web
+        Transactions page), which returns only `{ success: true }` with no
+        per-id accounting.
+      operationId: deleteExpensesBatch
+      tags: [Expenses]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items: { type: string }
+            example:
+              ids: ["101", "102", "103"]
+      responses:
+        '200':
+          description: Deletion result — partial failures are reported, not thrown as an error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted_count: { type: integer, example: 23 }
+                  failed_ids:
+                    type: array
+                    items: { type: string }
+                    description: ids that were non-numeric, or did not exist / were not owned by the caller (empty on full success)
+              example:
+                deleted_count: 2
+                failed_ids: ["999999"]
+        '400':
+          description: Missing/empty/malformed `ids`, or more than 500 entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example: { error: "ids array required (1-500 items)" }
+        '401':
+          description: Missing/invalid JWT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -220,6 +335,29 @@ components:
           format: date-time
           description: ISO 8601. Defaults to today when not stated by the user.
 
+    DeleteFilter:
+      type: object
+      description: >
+        Resolved deletion scope. The client maps these directly onto the
+        existing `GET /expenses` query params (`startDate`/`endDate`/
+        `category`) it already uses elsewhere in the app — no new
+        client-side filter vocabulary. `category`, when present, is always
+        one of the user's real category names — the backend re-validates it
+        against the caller's actual category list and nulls it out rather
+        than passing through anything unrecognized.
+      properties:
+        start_date:
+          type: string
+          format: date
+          nullable: true
+        end_date:
+          type: string
+          format: date
+          nullable: true
+        category:
+          type: string
+          nullable: true
+
     ConverseResponse:
       type: object
       description: Discriminated union on `status`.
@@ -227,10 +365,17 @@ components:
       properties:
         status:
           type: string
-          enum: [asking, concluded]
+          enum: [asking, concluded, delete_intent]
         message:
           type: string
-          description: Clarifying question (asking) or short friendly summary (concluded).
+          description: >
+            Clarifying question (asking), short friendly summary
+            (concluded), or a human-readable confirmation-style summary of
+            the resolved deletion scope (delete_intent) — e.g. "You want to
+            clear all transactions from September 2026?". The client shows
+            this as a normal chat bubble; it is NOT itself the confirmation
+            step — the client always independently counts real matches and
+            shows its own Cancel/Delete dialog afterward.
         quick_replies:
           type: array
           items: { type: string }
@@ -240,6 +385,12 @@ components:
           items:
             $ref: '#/components/schemas/ParsedExpense'
           description: Only present when status=concluded.
+        filter:
+          $ref: '#/components/schemas/DeleteFilter'
+          description: >
+            Only present when status=delete_intent. Carries no count —
+            deletion counts must always come from the client's own
+            GET /expenses query, never be asserted by this endpoint.
         cached:
           type: boolean
           description: True when this exact conversation hit the 24h response cache.

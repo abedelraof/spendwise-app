@@ -122,4 +122,11 @@ const bulkRemove = async (ids, userId) => {
   await execute('DELETE FROM expenses WHERE id = ANY($1) AND user_id = $2', [ids, userId]);
 };
 
-module.exports = { insertMany, findByUser, findAll, findById, update, remove, bulkRemove };
+// Like bulkRemove, but reports back exactly which ids were actually deleted —
+// used by DELETE /expenses/batch to distinguish real failures from bad/foreign ids.
+const removeMany = async (ids, userId) => {
+  const rows = await query('DELETE FROM expenses WHERE id = ANY($1) AND user_id = $2 RETURNING id', [ids, userId]);
+  return rows.map(r => r.id);
+};
+
+module.exports = { insertMany, findByUser, findAll, findById, update, remove, bulkRemove, removeMany };

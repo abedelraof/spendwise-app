@@ -288,6 +288,7 @@ telegram_bucket_sessions (chat_id PRIMARY KEY → telegram_links, state JSONB, u
 - `POST /api/ai/converse` (quota-gated, cached like `/parse`/`/ask` but keyed on the full serialized message history since the request is stateless) takes `{ messages: [{role, content}, ...] }` (the client's static opening greeting is never sent) and calls `aiService.converseExpenses()`.
 - Response is `{status: "asking", message, quick_replies?}` while still gathering info, or `{status: "concluded", message, expenses: [...]}` once amount+description (and category, best-effort) are known for every expense discussed — the `expenses` shape matches what `/parse` returns, so the mobile client hands it straight to the same confirm/save screen used by the quick-entry flow.
 - Never asks about `currency`/`date` (always defaulted); can conclude with multiple expenses from one conversation.
+- **Deletion requests**: the same endpoint also resolves natural-language deletion requests ("clear this month's transactions", "delete my coffee expenses last week") to a third status, `{status: "delete_intent", message, filter: {start_date, end_date, category}}`. The prompt only classifies unambiguous deletion language as `delete_intent` (a spending *question* is never treated as one — falls back to `asking` when scope is ambiguous, since this drives an irreversible action downstream). `aiService.converseExpenses()` then re-validates the model's `filter` server-side as defense in depth: `category` must case-insensitively match one of the caller's real category names (normalized to the stored name) or it's nulled out, and `start_date`/`end_date` must be `YYYY-MM-DD` or they're nulled out. This endpoint never asserts a count — the client is expected to independently re-query `GET /expenses` with the returned filter to show a verified count before confirming, then call `DELETE /api/expenses/batch` with the exact pinned ids. Full contract: [backend/docs/ai-converse.openapi.yaml](backend/docs/ai-converse.openapi.yaml).
 
 ### Finance Chat (AI Q&A)
 - `FinanceChat.jsx` on the Dashboard lets the user ask free-form questions ("Am I on track with my budgets?")
@@ -378,6 +379,7 @@ telegram_bucket_sessions (chat_id PRIMARY KEY → telegram_links, state JSONB, u
 | GET | `/` | List with filters: startDate, endDate, category, search, tags, sortBy, sortDir, limit, offset |
 | POST | `/` | Bulk insert `{ expenses: [...] }` |
 | PUT | `/:id` | Partial update |
+| DELETE | `/batch` | Delete multiple by id: `{ ids: [...] }` → `{ deleted_count, failed_ids }`, partial failures reported not thrown. Feeds the AI `delete_intent` flow (see "Conversational Expense Logging" above) |
 | DELETE | `/:id` | Delete (ownership checked) |
 
 ### Income — `/api/income`
@@ -462,7 +464,7 @@ Assignment lives on the expenses route: `PUT /api/expenses/:id/buckets { bucketI
 |--------|------|-------------|
 | POST | `/parse` | Natural language → expense array. Free for all plans; 429 `quota_exceeded` past the 100/month cap |
 | POST | `/ask` | Finance Chat: free-form question + financial context → markdown answer |
-| POST | `/converse` | Mobile-only conversational expense logging: `{messages}` → `{status: "asking"\|"concluded", ...}` (see "Conversational Expense Logging" below) |
+| POST | `/converse` | Mobile-only conversational expense logging + deletion: `{messages}` → `{status: "asking"\|"concluded"\|"delete_intent", ...}` (see "Conversational Expense Logging" below) |
 
 ### Insights — `/api/insights`
 | Method | Path | Description |
