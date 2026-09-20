@@ -10,6 +10,15 @@ const EXPENSE_SELECT = `
   LEFT JOIN subcategories s ON e.subcategory_id = s.id
 `;
 
+// The `date` column is plain TEXT and every date-range filter in this app compares
+// it lexicographically (e.date >= startDate AND e.date <= endDate), which silently
+// breaks the moment a row holds a full ISO datetime instead of YYYY-MM-DD (a longer
+// string sorts after its own date-only prefix, so e.g. today's own row can fail an
+// inclusive endDate=today bound). Some callers — AI-driven clients in particular —
+// send a full ISO 8601 datetime rather than a plain date, so normalize at the DB
+// write boundary rather than trusting every caller to truncate it themselves.
+const normalizeDate = d => (typeof d === 'string' ? d.slice(0, 10) : d);
+
 const insertMany = async (userId, expenses) => {
   const client = await pool.connect();
   try {
@@ -23,7 +32,7 @@ const insertMany = async (userId, expenses) => {
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
         [
           userId, e.amount, e.currency || 'EGP', e.exchange_rate || 1.0,
-          e.date, e.category_id || null, e.subcategory_id || null,
+          normalizeDate(e.date), e.category_id || null, e.subcategory_id || null,
           e.description || null, e.notes || null, e.tags || null,
           e.raw_text || null, e.is_recurring || 0, e.recurring_id || null,
         ]
@@ -107,7 +116,7 @@ const update = async (id, userId, fields) => {
   const allowed = ['amount','currency','exchange_rate','date','category_id','subcategory_id','description','notes','tags'];
   const sets = []; const vals = []; let idx = 1;
   for (const [k, v] of Object.entries(fields)) {
-    if (allowed.includes(k)) { sets.push(`${k} = $${idx++}`); vals.push(v); }
+    if (allowed.includes(k)) { sets.push(`${k} = $${idx++}`); vals.push(k === 'date' ? normalizeDate(v) : v); }
   }
   if (!sets.length) return null;
   vals.push(id, userId);
