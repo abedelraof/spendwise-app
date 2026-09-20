@@ -123,6 +123,46 @@ Return ONLY a JSON array — no markdown, no explanation, no code fences — con
 {"amount":number,"currency":"${userCurrency}","date":"YYYY-MM-DD","category":"string","subcategory":"string","description":"string (≤60 chars)","raw_text":"string","tags":"string"}`;
 }
 
+function buildConversePrompt(userCurrency, categories = []) {
+  const today = todayISO();
+  const userCategoryList = categories.map(c => {
+    const subs = (c.subcategories || []).map(s => s.name).join(', ');
+    return `  - "${c.name}"${subs ? ` → subcategories: ${subs}` : ''}`;
+  }).join('\n');
+  const userCategoryNames = categories.map(c => c.name);
+
+  return `You are a friendly assistant helping a user log one or more expenses through natural back-and-forth conversation. Today's date is ${today}. User's preferred currency: ${userCurrency}.
+
+Look at the whole conversation so far and decide whether you have enough information to conclude, or need to ask one more clarifying question.
+
+## Required fields per expense
+- amount (number) — REQUIRED, must be confidently known before concluding
+- description (short string) — REQUIRED, must be confidently known before concluding
+- category — ask about it only if genuinely ambiguous; otherwise infer your best match
+- currency — NEVER ask about this; default to ${userCurrency} if not stated
+- date — NEVER ask about this; default to today (${today}) if not stated
+
+## User's existing categories (prefer an exact case-insensitive match; otherwise suggest a concise descriptive new one)
+${userCategoryList || '  (none yet)'}
+Valid category names: ${JSON.stringify(userCategoryNames)}
+
+## Rules
+1. Ask AT MOST one concise question per turn, and only about a genuinely missing/ambiguous amount, description, or category.
+2. Never ask about currency or date — always default them silently.
+3. The user may describe multiple expenses across the conversation — track all of them.
+4. Once amount + description are confidently known for every expense mentioned, and category is resolved as well as it reasonably can be, conclude — don't keep asking for polish.
+5. When asking, you may suggest 2-4 short "quick_replies" the user could tap instead of typing (e.g. likely category names). Omit or use [] when nothing sensible fits.
+6. When concluding, write one short friendly sentence and list every expense discussed in the conversation (not just the most recent one).
+
+Respond with ONLY a single JSON object — no markdown, no code fences, no explanation — in exactly one of these two shapes:
+
+Still gathering info:
+{"status":"asking","message":"<one short question>","quick_replies":["<option>","<option>"]}
+
+Done:
+{"status":"concluded","message":"<short friendly summary>","expenses":[{"description":"string","amount":number,"currency":"${userCurrency}","category":"string","date":"YYYY-MM-DDT00:00:00.000Z"}]}`;
+}
+
 function buildInsightPrompt(data, userCurrency) {
   return `You are a friendly personal finance advisor. Write exactly ONE paragraph (3-5 sentences) summarizing this user's spending for the month. Be specific, mention actual numbers, highlight the biggest category, note any notable patterns. Do NOT use bullet points or headers — pure paragraph text only.
 
@@ -272,4 +312,19 @@ async function answerQuestion(question, context, encryptedApiKey, currency) {
   return msg.content[0].text.trim();
 }
 
-module.exports = { parseExpenses, reviseExpenses, generateInsight, mapCsvColumns, answerQuestion };
+async function converseExpenses(messages, userCurrency, categories = []) {
+  const client = await getClient(null);
+  const msg = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 2048,
+    system: buildConversePrompt(userCurrency, categories),
+    messages: messages.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
+  });
+  const result = extractJsonObj(msg.content[0].text);
+  if (result.status !== 'asking' && result.status !== 'concluded') {
+    return { status: 'asking', message: 'Could you tell me more about that expense?', quick_replies: [] };
+  }
+  return result;
+}
+
+module.exports = { parseExpenses, reviseExpenses, generateInsight, mapCsvColumns, answerQuestion, converseExpenses };

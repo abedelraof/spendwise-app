@@ -201,11 +201,6 @@ async function runMigrations() {
     `);
 
     await client.query(`
-      ALTER TABLE telegram_links ADD COLUMN IF NOT EXISTS last_expense_ids INTEGER[];
-      ALTER TABLE telegram_links ADD COLUMN IF NOT EXISTS digest_frequency TEXT NOT NULL DEFAULT 'off';
-    `);
-
-    await client.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_budget_cap NUMERIC;
     `);
 
@@ -248,6 +243,9 @@ async function runMigrations() {
         state      JSONB NOT NULL,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+
+      ALTER TABLE telegram_links ADD COLUMN IF NOT EXISTS last_expense_ids INTEGER[];
+      ALTER TABLE telegram_links ADD COLUMN IF NOT EXISTS digest_frequency TEXT NOT NULL DEFAULT 'off';
     `);
 
     console.log('[migrations] Schema up to date');

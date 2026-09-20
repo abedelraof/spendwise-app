@@ -1,0 +1,257 @@
+openapi: 3.0.3
+info:
+  title: ExpenseBeam AI — Conversational Expense Logging
+  description: >
+    Spec for the new `POST /api/ai/converse` endpoint, plus the two existing
+    `/api/ai` endpoints it shares auth/quota/caching behavior with, for context.
+    Stateless: the client resends the full message history each turn; there is
+    no server-side session.
+  version: "1.0.0"
+
+servers:
+  - url: http://localhost:3001/api
+    description: Local dev
+  - url: https://expensebeam.com/api
+    description: Production
+
+security:
+  - bearerAuth: []
+
+paths:
+  /ai/converse:
+    post:
+      summary: Conversational expense logging turn
+      description: >
+        Send the full conversation so far (the client's own static opening
+        greeting is NOT included — `messages` starts at the first real user
+        turn). Returns either a clarifying question or a final list of parsed
+        expenses. Counts against the same 100/month AI quota as `/ai/parse`
+        and `/ai/ask`, with the same 24h response cache (keyed on the full
+        serialized message history, so replaying an identical conversation
+        returns a cached hit and does not consume quota).
+      operationId: converseExpenses
+      tags: [AI]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConverseRequest'
+            examples:
+              firstTurn:
+                summary: First user message
+                value:
+                  messages:
+                    - role: user
+                      content: coffee and lunch today
+              followUp:
+                summary: Mid-conversation, answering a clarifying question
+                value:
+                  messages:
+                    - role: user
+                      content: coffee and lunch today
+                    - role: assistant
+                      content: Got it — how much was the coffee?
+                    - role: user
+                      content: 45 EGP, lunch was 320
+      responses:
+        '200':
+          description: >
+            Either the assistant is still gathering info (`asking`) or has
+            enough to conclude (`concluded`). See `ConverseResponse` for the
+            discriminated shape.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConverseResponse'
+              examples:
+                asking:
+                  summary: Still gathering info
+                  value:
+                    status: asking
+                    message: What category for the lunch?
+                    quick_replies: ["Food & Dining", "Other"]
+                concludedNoQuota:
+                  summary: Done — matches the shape ConfirmExpensesScreen already parses
+                  value:
+                    status: concluded
+                    message: "Here's what I found:"
+                    expenses:
+                      - description: Coffee
+                        amount: 45
+                        currency: EGP
+                        category: Food & Dining
+                        date: "2026-09-20T00:00:00.000Z"
+                      - description: Lunch
+                        amount: 320
+                        currency: EGP
+                        category: Food & Dining
+                        date: "2026-09-20T00:00:00.000Z"
+                cachedHit:
+                  summary: Identical conversation replayed within 24h (does not consume quota)
+                  value:
+                    status: asking
+                    message: What category for the lunch?
+                    quick_replies: ["Food & Dining", "Other"]
+                    cached: true
+        '400':
+          description: Missing or malformed `messages`
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missing:
+                  value: { error: "messages is required" }
+                malformed:
+                  value: { error: "Invalid messages format" }
+        '401':
+          description: Missing/invalid JWT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example: { error: "No token provided" }
+        '429':
+          description: Monthly AI quota exceeded (100 calls/month, shared with `/parse` and `/ask`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuotaExceededResponse'
+              example:
+                error: quota_exceeded
+                message: Monthly AI limit reached.
+                reset_date: "2026-10-01"
+
+  /ai/parse:
+    post:
+      summary: One-shot natural-language → expense array (existing endpoint, for context)
+      tags: [AI]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, example: "coffee 45 EGP, lunch 120" }
+      responses:
+        '200':
+          description: Parsed expenses
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  expenses:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ParsedExpense'
+                  cached: { type: boolean }
+
+  /ai/ask:
+    post:
+      summary: Finance Chat Q&A (existing endpoint, for context)
+      tags: [AI]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question: { type: string, example: "Am I on track with my budgets?" }
+      responses:
+        '200':
+          description: Markdown answer
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  answer: { type: string }
+                  cached: { type: boolean }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    ChatTurn:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+          minLength: 1
+
+    ConverseRequest:
+      type: object
+      required: [messages]
+      properties:
+        messages:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ChatTurn'
+
+    ParsedExpense:
+      type: object
+      description: >
+        Shape consumed directly by the mobile client's
+        ConfirmExpensesScreen (`_ExpenseForm.fromParsed`) — the same shape
+        `/ai/parse` already returns.
+      required: [description, amount, currency, category, date]
+      properties:
+        description: { type: string, maxLength: 60 }
+        amount: { type: number }
+        currency: { type: string, example: EGP }
+        category: { type: string }
+        date:
+          type: string
+          format: date-time
+          description: ISO 8601. Defaults to today when not stated by the user.
+
+    ConverseResponse:
+      type: object
+      description: Discriminated union on `status`.
+      required: [status, message]
+      properties:
+        status:
+          type: string
+          enum: [asking, concluded]
+        message:
+          type: string
+          description: Clarifying question (asking) or short friendly summary (concluded).
+        quick_replies:
+          type: array
+          items: { type: string }
+          description: Only present/non-empty when status=asking. Tapping one sends it as the next user turn.
+        expenses:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParsedExpense'
+          description: Only present when status=concluded.
+        cached:
+          type: boolean
+          description: True when this exact conversation hit the 24h response cache.
+
+    ErrorResponse:
+      type: object
+      properties:
+        error: { type: string }
+
+    QuotaExceededResponse:
+      type: object
+      properties:
+        error: { type: string, example: quota_exceeded }
+        message: { type: string }
+        reset_date: { type: string, format: date, example: "2026-10-01" }

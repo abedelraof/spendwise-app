@@ -3,7 +3,7 @@ const router = require('express').Router();
 const auth = require('../middleware/auth');
 const userModel = require('../models/userModel');
 const categoryModel = require('../models/categoryModel');
-const { parseExpenses, answerQuestion } = require('../services/aiService');
+const { parseExpenses, answerQuestion, converseExpenses } = require('../services/aiService');
 const { query, execute } = require('../db/database');
 const { getFinanceContext } = require('../services/expenseService');
 
@@ -89,6 +89,35 @@ router.post('/ask', auth, enforceAiQuota, async (req, res, next) => {
     const context = await getFinanceContext(userId);
     const answer = await answerQuestion(question.trim(), context, null, req.aiUser.currency);
     const result = { answer };
+
+    await setCachedResponse(cacheKey, result);
+    await incrementAiUsage(userId);
+
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/converse', auth, enforceAiQuota, async (req, res, next) => {
+  try {
+    const { messages } = req.body;
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: 'messages is required' });
+    }
+    for (const m of messages) {
+      if (!m || typeof m.content !== 'string' || !m.content.trim() || !['user', 'assistant'].includes(m.role)) {
+        return res.status(400).json({ error: 'Invalid messages format' });
+      }
+    }
+
+    const userId = req.user.userId;
+    const cacheKey = getCacheKey(userId, JSON.stringify(messages));
+    const cached = await getCachedResponse(cacheKey);
+    if (cached) return res.json({ ...cached, cached: true });
+
+    const categories = await categoryModel.findByUser(userId);
+    const result = await converseExpenses(messages, req.aiUser.currency, categories);
 
     await setCachedResponse(cacheKey, result);
     await incrementAiUsage(userId);

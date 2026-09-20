@@ -283,6 +283,12 @@ telegram_bucket_sessions (chat_id PRIMARY KEY → telegram_links, state JSONB, u
 - `POST /api/ai/parse` (quota-gated, cached) → `aiService.parseExpenses()` calls Claude with a structured prompt → returns parsed expense array
 - User confirms in `ParsedExpenseConfirm` modal → bulk inserted via `POST /api/expenses`
 
+### Conversational Expense Logging (AI, mobile only)
+- Mobile-only entry point (`LogExpenseChatScreen` in the separate `ExpensebeamMobile` Flutter repo) for a back-and-forth alternative to the one-shot parse box — the system asks a clarifying question when amount/description/category is ambiguous instead of guessing.
+- `POST /api/ai/converse` (quota-gated, cached like `/parse`/`/ask` but keyed on the full serialized message history since the request is stateless) takes `{ messages: [{role, content}, ...] }` (the client's static opening greeting is never sent) and calls `aiService.converseExpenses()`.
+- Response is `{status: "asking", message, quick_replies?}` while still gathering info, or `{status: "concluded", message, expenses: [...]}` once amount+description (and category, best-effort) are known for every expense discussed — the `expenses` shape matches what `/parse` returns, so the mobile client hands it straight to the same confirm/save screen used by the quick-entry flow.
+- Never asks about `currency`/`date` (always defaulted); can conclude with multiple expenses from one conversation.
+
 ### Finance Chat (AI Q&A)
 - `FinanceChat.jsx` on the Dashboard lets the user ask free-form questions ("Am I on track with my budgets?")
 - `POST /api/ai/ask` (quota-gated, cached) assembles context — recent expenses, category totals, incomes, budgets vs. spend, goals, accounts, dashboard stats — and calls `aiService.answerQuestion()`
@@ -456,6 +462,7 @@ Assignment lives on the expenses route: `PUT /api/expenses/:id/buckets { bucketI
 |--------|------|-------------|
 | POST | `/parse` | Natural language → expense array. Free for all plans; 429 `quota_exceeded` past the 100/month cap |
 | POST | `/ask` | Finance Chat: free-form question + financial context → markdown answer |
+| POST | `/converse` | Mobile-only conversational expense logging: `{messages}` → `{status: "asking"\|"concluded", ...}` (see "Conversational Expense Logging" below) |
 
 ### Insights — `/api/insights`
 | Method | Path | Description |
