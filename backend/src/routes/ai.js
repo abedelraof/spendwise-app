@@ -3,7 +3,7 @@ const router = require('express').Router();
 const auth = require('../middleware/auth');
 const userModel = require('../models/userModel');
 const categoryModel = require('../models/categoryModel');
-const { parseExpenses, answerQuestion, converseExpenses } = require('../services/aiService');
+const { parseExpenses, answerQuestion, converseExpenses, PROMPT_VERSION } = require('../services/aiService');
 const { query, execute } = require('../db/database');
 const { getFinanceContext } = require('../services/expenseService');
 
@@ -13,7 +13,9 @@ function getResetDate() {
 }
 
 function getCacheKey(userId, text) {
-  return crypto.createHash('sha256').update(`${userId}:${text}`).digest('hex');
+  // Prefixed with PROMPT_VERSION so a prompt-template change (aiService.js) invalidates
+  // cached responses instead of leaving stale pre-fix answers to replay for up to 24h.
+  return crypto.createHash('sha256').update(`${PROMPT_VERSION}:${userId}:${text}`).digest('hex');
 }
 
 // AI is free for every user (no plan gate). A per-user monthly cap remains as a

@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const Anthropic = require('@anthropic-ai/sdk');
 const { decrypt } = require('./cryptoService');
 const { todayISO, yesterdayISO } = require('../utils/dateUtils');
@@ -363,4 +364,13 @@ async function converseExpenses(messages, userCurrency, categories = []) {
   return result;
 }
 
-module.exports = { parseExpenses, reviseExpenses, generateInsight, mapCsvColumns, answerQuestion, converseExpenses };
+// Hashes the actual prompt-builder source (not just a manually-bumped constant) so the
+// AI response cache (routes/ai.js) automatically invalidates whenever any of these
+// instruction templates changes — a prior prompt fix silently kept getting shadowed by
+// pre-fix cached responses for up to 24h because the cache key had no notion of this.
+const PROMPT_VERSION = crypto.createHash('sha256')
+  .update([buildParsePrompt, buildRevisePrompt, buildConversePrompt, buildFinanceChatPrompt].map(fn => fn.toString()).join('\n'))
+  .digest('hex')
+  .slice(0, 16);
+
+module.exports = { parseExpenses, reviseExpenses, generateInsight, mapCsvColumns, answerQuestion, converseExpenses, PROMPT_VERSION };
