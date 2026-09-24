@@ -169,7 +169,49 @@ When you do classify delete_intent, resolve a filter:
 - category — if the user named a category or something that maps to one, resolve it to the EXACT string from the user's valid category names above (case-sensitive match to the list); if nothing in the input maps to a real category, use null. Never invent a category name that isn't in the user's list.
 - message — a short, human-readable confirmation-style summary of the resolved scope, e.g. "You want to clear all transactions from September 2026?" or "Delete your Food & Dining expenses from the last 7 days?". This is shown as a chat bubble, NOT itself a confirmation dialog — the client always independently counts the real matches and shows its own Cancel/Delete dialog afterward, so you never need to know or state a count.
 
-Respond with ONLY a single JSON object — no markdown, no code fences, no explanation — in exactly one of these three shapes:
+## Questions about their finances (status=question_intent)
+The user may ask a READ question about money they've already recorded — "how much did I spend on food this month", "what's my biggest category", "am I over budget", "how much did I earn in August", "what did I spend yesterday".
+
+You do NOT have their financial data in this conversation, so never attempt an answer or a number yourself. Classify the turn as question_intent and restate the question; the server answers it separately against their real figures.
+
+Restate the question so it stands alone, folding in anything it inherits from earlier turns — "what about last month?" following a question about food becomes "how much did I spend on food last month?". The answering step sees only this one restated string, never the conversation.
+
+A question is never a deletion (see the delete rules above) and never an expense to log.
+
+## Editing an existing transaction (status=edit_intent)
+The user may ask to CHANGE something already recorded — "change yesterday's coffee to 80", "the taxi was actually 150", "rename that lunch to team lunch", "move my Uber to Transport".
+
+Only for transactions already logged BEFORE this conversation. An expense the user is describing right now, or one still sitting in an unconfirmed review card, is normal logging — keep those under asking/concluded.
+
+Resolve two things:
+- filter — which existing transactions to change: start_date / end_date (ISO YYYY-MM-DD relative to today, null if unbounded), category (EXACT string from the valid list, else null), and match (a short distinctive word or two from the description to search for, e.g. "coffee", else null). Give at least one of these; if the user's reference is too vague to narrow at all ("change my expense"), use status=asking instead.
+- changes — what to set. Include ONLY the fields the user actually wants changed: amount (number), description (string), category (EXACT string from the valid list), date (ISO YYYY-MM-DD). At least one is required.
+
+The client independently looks up what matches and shows the user a before/after confirmation, so never state a count and never claim the change is done — write the message as a proposal ("Change yesterday's coffee to 80 EGP?").
+
+## Logging income (status=income_concluded)
+Money coming IN, not going out — "got my salary 15000", "client paid me 3000 today", "made 500 selling my old phone".
+
+Each income needs amount (number) and source, where source is EXACTLY one of: "Salary", "Business", "Freelance", "Investment", "Rental", "Gift", "Other". Pick the closest; use "Other" when nothing fits. description is optional free text, date defaults to today (${today}), currency defaults to ${userCurrency}. Ask (status=asking) only if the amount is genuinely unknown.
+
+## Recurring expenses (status=recurring_concluded)
+A charge that REPEATS on a schedule — "add my 200 gym membership every month", "netflix 120 monthly", "I pay rent 5000 on the 1st".
+
+Needs amount (number), interval (EXACTLY one of "daily", "weekly", "monthly"), and next_due_date (ISO YYYY-MM-DD, the next time it is due — compute it relative to today (${today}); default to today if the user gives no timing). description and category are optional and follow the same category rules as expenses. If the user names no interval and none is obvious, ask.
+
+A one-off past purchase is NOT recurring — "I paid rent 5000" is an expense; "I pay rent 5000 every month" is recurring.
+
+## Reports (status=report_intent)
+The user may ask for their spending report or summary card — "send me my report", "show this week's summary", "report for today".
+
+period must be EXACTLY one of: "today", "yesterday", "week", "month". These are the only periods that exist. "this month" → "month"; "this week" / "last 7 days" → "week". If they ask for a period that isn't one of these (a specific month, last month, a custom range, a year), do NOT guess a near-miss — use status=asking and tell them which periods are available.
+
+A request for a report is not a question to answer (question_intent) — it returns a rendered card, not prose.
+
+## Choosing between all of these
+Expense logging is the default. Reach for another status only when the user's words clearly call for it. When genuinely torn between logging and anything else, log — it is the only one the user can review and correct before it takes effect.
+
+Respond with ONLY a single JSON object — no markdown, no code fences, no explanation — in exactly one of these shapes:
 
 Still gathering info:
 {"status":"asking","message":"<one short question>","quick_replies":["<option>","<option>"]}
@@ -178,7 +220,22 @@ Done logging:
 {"status":"concluded","message":"<short friendly summary>","expenses":[{"description":"string","amount":number,"currency":"${userCurrency}","category":"string","date":"YYYY-MM-DDT00:00:00.000Z"}]}
 
 Deletion request resolved:
-{"status":"delete_intent","message":"<confirmation-style summary of scope>","filter":{"start_date":"YYYY-MM-DD"|null,"end_date":"YYYY-MM-DD"|null,"category":"string"|null}}`;
+{"status":"delete_intent","message":"<confirmation-style summary of scope>","filter":{"start_date":"YYYY-MM-DD"|null,"end_date":"YYYY-MM-DD"|null,"category":"string"|null}}
+
+A question about their finances:
+{"status":"question_intent","question":"<the question, restated to stand alone>"}
+
+Edit request resolved:
+{"status":"edit_intent","message":"<proposal-style summary>","filter":{"start_date":"YYYY-MM-DD"|null,"end_date":"YYYY-MM-DD"|null,"category":"string"|null,"match":"string"|null},"changes":{"amount":number,"description":"string","category":"string","date":"YYYY-MM-DD"}}
+
+Done logging income:
+{"status":"income_concluded","message":"<short friendly summary>","incomes":[{"amount":number,"currency":"${userCurrency}","source":"Salary","description":"string","date":"YYYY-MM-DD"}]}
+
+Done setting up a recurring expense:
+{"status":"recurring_concluded","message":"<short friendly summary>","recurring":{"amount":number,"currency":"${userCurrency}","category":"string","description":"string","interval":"monthly","next_due_date":"YYYY-MM-DD"}}
+
+Report requested:
+{"status":"report_intent","message":"<one short line>","period":"month"}`;
 }
 
 function buildInsightPrompt(data, userCurrency) {
@@ -332,6 +389,29 @@ async function answerQuestion(question, context, encryptedApiKey, currency) {
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+const INCOME_SOURCES = ['Salary', 'Business', 'Freelance', 'Investment', 'Rental', 'Gift', 'Other'];
+const RECURRING_INTERVALS = ['daily', 'weekly', 'monthly'];
+const REPORT_PERIODS = ['today', 'yesterday', 'week', 'month'];
+
+// Every non-logging status below drives a real write or lookup on the user's
+// data, so none of the model's strings are trusted as they arrive: categories
+// must exist, dates must be dates, amounts must be positive numbers, and enum
+// fields must be in range. Anything that fails falls back to a plain question
+// rather than reaching the client half-valid.
+const asking = (message = 'Could you tell me more about that expense?') =>
+  ({ status: 'asking', message, quick_replies: [] });
+
+const isoDate = v => (typeof v === 'string' && ISO_DATE_RE.test(v) ? v : null);
+const positiveAmount = v => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null);
+const text = v => (typeof v === 'string' && v.trim() ? v.trim() : null);
+
+function resolveCategory(value, categories) {
+  const name = text(value);
+  if (!name) return null;
+  const match = categories.find(c => c.name.toLowerCase() === name.toLowerCase());
+  return match ? match.name : null;
+}
+
 async function converseExpenses(messages, userCurrency, categories = []) {
   const client = await getClient(null);
   const msg = await client.messages.create({
@@ -358,8 +438,87 @@ async function converseExpenses(messages, userCurrency, categories = []) {
     return { status: 'delete_intent', message: result.message, filter: { start_date, end_date, category } };
   }
 
+  if (result.status === 'question_intent') {
+    // Answered by the route against real data — the model never sees the
+    // figures, so a blank question here would answer nothing.
+    const question = text(result.question);
+    return question ? { status: 'question_intent', question } : asking();
+  }
+
+  if (result.status === 'edit_intent') {
+    const f = result.filter && typeof result.filter === 'object' ? result.filter : {};
+    const filter = {
+      start_date: isoDate(f.start_date),
+      end_date: isoDate(f.end_date),
+      category: resolveCategory(f.category, categories),
+      match: text(f.match),
+    };
+    // With every filter field dropped this would select the user's entire
+    // history — refuse rather than propose an unbounded edit.
+    if (!Object.values(filter).some(v => v !== null)) {
+      return asking('Which transaction should I change?');
+    }
+
+    const c = result.changes && typeof result.changes === 'object' ? result.changes : {};
+    const changes = {};
+    if (positiveAmount(c.amount) !== null) changes.amount = positiveAmount(c.amount);
+    if (text(c.description)) changes.description = text(c.description);
+    if (resolveCategory(c.category, categories)) changes.category = resolveCategory(c.category, categories);
+    if (isoDate(c.date)) changes.date = isoDate(c.date);
+    if (!Object.keys(changes).length) return asking('What should I change it to?');
+
+    const message = text(result.message);
+    return message ? { status: 'edit_intent', message, filter, changes } : asking();
+  }
+
+  if (result.status === 'income_concluded') {
+    const raw = Array.isArray(result.incomes) ? result.incomes : [];
+    const incomes = raw.map(i => {
+      const amount = positiveAmount(i?.amount);
+      if (amount === null) return null;
+      const source = INCOME_SOURCES.find(s => s.toLowerCase() === String(i?.source ?? '').toLowerCase());
+      return {
+        amount,
+        currency: text(i?.currency) || userCurrency,
+        source: source || 'Other',
+        description: text(i?.description),
+        date: isoDate(i?.date) || todayISO(),
+      };
+    }).filter(Boolean);
+    if (!incomes.length) return asking('How much was it?');
+    return { status: 'income_concluded', message: text(result.message) || 'Ready to save this income:', incomes };
+  }
+
+  if (result.status === 'recurring_concluded') {
+    const r = result.recurring && typeof result.recurring === 'object' ? result.recurring : {};
+    const amount = positiveAmount(r.amount);
+    const interval = RECURRING_INTERVALS.find(i => i === String(r.interval ?? '').toLowerCase());
+    if (amount === null) return asking('How much is it each time?');
+    if (!interval) return asking('How often does it repeat — daily, weekly or monthly?');
+    return {
+      status: 'recurring_concluded',
+      message: text(result.message) || 'Ready to set this up:',
+      recurring: {
+        amount,
+        currency: text(r.currency) || userCurrency,
+        category: resolveCategory(r.category, categories),
+        description: text(r.description),
+        interval,
+        next_due_date: isoDate(r.next_due_date) || todayISO(),
+      },
+    };
+  }
+
+  if (result.status === 'report_intent') {
+    const period = REPORT_PERIODS.find(p => p === String(result.period ?? '').toLowerCase());
+    if (!period) {
+      return asking('Which period would you like — today, yesterday, this week or this month?');
+    }
+    return { status: 'report_intent', message: text(result.message) || 'Here it is:', period };
+  }
+
   if (result.status !== 'asking' && result.status !== 'concluded') {
-    return { status: 'asking', message: 'Could you tell me more about that expense?', quick_replies: [] };
+    return asking();
   }
   return result;
 }

@@ -1,17 +1,36 @@
 openapi: 3.0.3
 info:
-  title: ExpenseBeam AI — Conversational Expense Logging & Deletion
+  title: ExpenseBeam AI — Conversational Expense Logging, Editing & Q&A
   description: >
     Spec for `POST /api/ai/converse`, plus the two existing `/api/ai`
     endpoints it shares auth/quota/caching behavior with, for context. As of
-    1.1.0, converse also resolves deletion requests via a third `status`,
-    `delete_intent`, paired with the new `DELETE /api/expenses/batch`
-    endpoint. Stateless: the client resends the full message history each
-    turn; there is no server-side session. The client independently
-    re-verifies the exact matching transactions and count via
-    `GET /expenses` before ever deleting anything — this endpoint only
-    needs to resolve *intent* and a *filter*, never a count.
-  version: "1.1.0"
+    1.1.0, converse also resolves deletion requests via `delete_intent`,
+    paired with `DELETE /api/expenses/batch`. As of 1.2.0 it is the single
+    entry point for the whole assistant, adding: `answering` (a finance
+    question, resolved server-side against the user's real data via the same
+    context as `/ai/ask`), `edit_intent`, `income_concluded`,
+    `recurring_concluded` and `report_intent`.
+
+    Stateless: the client resends the full message history each turn; there
+    is no server-side session. For anything that writes or deletes, this
+    endpoint resolves *intent* and a *filter* only — never a count and never
+    the affected rows. The client independently re-verifies the exact
+    matching transactions via `GET /expenses` and confirms with the user
+    before deleting or editing anything.
+
+    Client-gated: a client sends `supports` listing the statuses it can carry
+    through to completion. Anything outside that list is downgraded on the way
+    out — `answering` becomes a plain `asking` turn carrying the same prose,
+    and the write intents become a short message pointing at the equivalent
+    screen. A request with no `supports` is treated as an older build and
+    receives only asking/concluded/delete_intent. Gating is applied after the
+    cache, so one cache entry serves every client version.
+
+    Quota: a question costs one unit, not two — the `question_intent` the
+    model returns is resolved into an `answering` response inside this same
+    request. Answers are never cached, since they derive from data the
+    conversation itself keeps changing.
+  version: "1.2.0"
 
 servers:
   - url: http://localhost:3001/api
@@ -365,17 +384,31 @@ components:
       properties:
         status:
           type: string
-          enum: [asking, concluded, delete_intent]
+          enum:
+            - asking
+            - concluded
+            - delete_intent
+            - answering
+            - edit_intent
+            - income_concluded
+            - recurring_concluded
+            - report_intent
+          description: >
+            `question_intent` is an internal status the model may return; it
+            never reaches the client, because the route resolves it into
+            `answering` within the same request.
         message:
           type: string
           description: >
-            Clarifying question (asking), short friendly summary
-            (concluded), or a human-readable confirmation-style summary of
-            the resolved deletion scope (delete_intent) — e.g. "You want to
-            clear all transactions from September 2026?". The client shows
-            this as a normal chat bubble; it is NOT itself the confirmation
-            step — the client always independently counts real matches and
-            shows its own Cancel/Delete dialog afterward.
+            Clarifying question (asking), short friendly summary (concluded,
+            income_concluded, recurring_concluded), the finished answer to a
+            finance question (answering), or a confirmation-style summary of
+            a resolved scope (delete_intent, edit_intent) — e.g. "You want to
+            clear all transactions from September 2026?". For the intent
+            statuses the client shows this as a normal chat bubble; it is NOT
+            itself the confirmation step — the client always independently
+            resolves the real matching rows and shows its own Cancel/Confirm
+            card afterward.
         quick_replies:
           type: array
           items: { type: string }
@@ -388,12 +421,69 @@ components:
         filter:
           $ref: '#/components/schemas/DeleteFilter'
           description: >
-            Only present when status=delete_intent. Carries no count —
-            deletion counts must always come from the client's own
-            GET /expenses query, never be asserted by this endpoint.
+            Present when status=delete_intent, and when status=edit_intent
+            with an additional nullable `match` field (a short description
+            substring, passed to GET /expenses as `search`). Carries no count
+            — counts must always come from the client's own GET /expenses
+            query, never be asserted by this endpoint. At least one filter
+            field is guaranteed non-null: a filter that resolved to nothing
+            would select the user's entire history, so the server downgrades
+            it to `asking` instead.
+        changes:
+          type: object
+          description: >
+            Only present when status=edit_intent. At least one key, each
+            server-validated: amount (positive number), description
+            (non-empty), category (an existing category name), date
+            (YYYY-MM-DD). Sent as-is as the PUT /expenses/{id} body.
+          properties:
+            amount: { type: number }
+            description: { type: string }
+            category: { type: string }
+            date: { type: string, format: date }
+        incomes:
+          type: array
+          description: >
+            Only present when status=income_concluded. Each entry has amount
+            (positive), currency, source (one of Salary, Business, Freelance,
+            Investment, Rental, Gift, Other — anything else is coerced to
+            Other), optional description, and date (defaults to today).
+            Posted by the client to POST /income after confirmation.
+          items:
+            type: object
+            properties:
+              amount: { type: number }
+              currency: { type: string }
+              source: { type: string }
+              description: { type: string, nullable: true }
+              date: { type: string, format: date }
+        recurring:
+          type: object
+          description: >
+            Only present when status=recurring_concluded. Posted by the
+            client to POST /recurring after confirmation — note that endpoint
+            takes camelCase `nextDueDate`, so the client maps it.
+          properties:
+            amount: { type: number }
+            currency: { type: string }
+            category: { type: string, nullable: true }
+            description: { type: string, nullable: true }
+            interval: { type: string, enum: [daily, weekly, monthly] }
+            next_due_date: { type: string, format: date }
+        period:
+          type: string
+          enum: [today, yesterday, week, month]
+          description: >
+            Only present when status=report_intent. These are the only
+            periods GET /reports/report.png accepts; a request for any other
+            range is downgraded to `asking` rather than snapped to a
+            near-miss. The client fetches the PNG itself and renders it
+            inline in the conversation.
         cached:
           type: boolean
-          description: True when this exact conversation hit the 24h response cache.
+          description: >
+            True when this exact conversation hit the 24h response cache.
+            Never set for status=answering — answers are not cached.
 
     ErrorResponse:
       type: object
