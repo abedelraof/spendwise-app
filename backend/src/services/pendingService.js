@@ -70,6 +70,28 @@ const listPending = (userId) =>
     [userId]
   );
 
+const getPending = (userId, id) =>
+  queryOne(
+    `SELECT ${COLUMNS} FROM pending_transactions WHERE id = $1 AND user_id = $2 AND status = 'pending'`,
+    [id, userId]
+  );
+
+// The oldest pending row after `afterId` (0 = from the start) — a stable cursor for
+// the Telegram review stepper, which keeps no session state of its own.
+const nextPending = (userId, afterId = 0) =>
+  queryOne(
+    `SELECT ${COLUMNS} FROM pending_transactions
+     WHERE user_id = $1 AND status = 'pending' AND id > $2
+     ORDER BY id ASC LIMIT 1`,
+    [userId, afterId]
+  );
+
+const countPending = async (userId) =>
+  (await queryOne(
+    `SELECT COUNT(*)::int AS n FROM pending_transactions WHERE user_id = $1 AND status = 'pending'`,
+    [userId]
+  )).n;
+
 // Validates the optional edits the user made in the review UI. Anything invalid
 // is a 400 rather than being silently dropped — the user would otherwise confirm
 // a transaction that does not match what they just typed.
@@ -187,4 +209,4 @@ async function rejectPending(userId, id) {
   if (!r.rowCount) throw new HttpError(404, 'Pending transaction not found or already handled');
 }
 
-module.exports = { ingestSms, listPending, confirmPending, rejectPending, HttpError };
+module.exports = { ingestSms, listPending, getPending, nextPending, countPending, confirmPending, rejectPending, HttpError };

@@ -12,6 +12,7 @@ const accountService = require('./accountService');
 const ratesService = require('./ratesService');
 const budgetService = require('./budgetService');
 const reportService = require('./reportService');
+const { getPending, nextPending, countPending, confirmPending, rejectPending } = require('./pendingService');
 const { generateMonthlyInsight } = require('./insightService');
 const { yesterdayISO, todayISO, resolvePeriod } = require('../utils/dateUtils');
 
@@ -32,6 +33,7 @@ const HELP_TEXT = `Here's what I can do:
 • /currency <amount> <from> [to] <to> — quick FX conversion, e.g. /currency 100 usd to egp
 • /undo — remove the expenses from your last confirmed message
 • /assign [today|yesterday|YYYY-MM-DD] — assign a day's expenses to buckets, one at a time
+• /pending — review transactions parsed from your SMS webhook: see the details, pick a bucket, confirm or dismiss
 • /digest daily|weekly|off — get a proactive spending digest (you'll also get a monthly AI insight automatically)
 • /ask <question> — ask anything about your finances, e.g. /ask am I on track with my budgets?
 • /help — show this message`;
@@ -373,6 +375,73 @@ async function advanceAssign(ctx, chatId, user, state) {
   return safeEdit(ctx, text, keyboard);
 }
 
+// ── /pending — review SMS-parsed transactions (see services/pendingService.js) ──
+// Stateless on purpose: every button carries the pending row's id (`pn:<act>:<id>`),
+// and the bucket toggles are read back from the keyboard on the message that was
+// tapped (a ✅ prefix = selected). No session table, so nothing to expire.
+// Confirm/dismiss go through the same pendingService the web UI uses.
+const NO_PENDING_MSG = '✅ Nothing waiting for review.';
+
+function formatPendingCard(row, waiting) {
+  const isIncome = row.type === 'income';
+  return [
+    `📥 Pending transaction · ${waiting} waiting`,
+    '',
+    `${isIncome ? '🟢 Income' : '🔴 Expense'} · ${row.description || 'SMS transaction'}`,
+    `${isIncome ? '+' : '−'}${fmtAmount(row.amount)} ${row.currency}`,
+    `📅 ${row.date}`,
+    isIncome ? `💼 Source: ${row.source || 'Other'}` : `🏷 Category: ${row.category || 'none found → saved as Other'}`,
+    '',
+    `💬 ${row.raw_text}`,
+  ].join('\n');
+}
+
+const pendingCardKeyboard = (row) => Markup.inlineKeyboard([
+  [Markup.button.callback('✅ Confirm', `pn:c:${row.id}`), Markup.button.callback('🗑 Dismiss', `pn:d:${row.id}`)],
+  [Markup.button.callback('⏭ Next', `pn:n:${row.id}`)],
+]);
+
+function renderPendingBucketStep(row, buckets, sel) {
+  const names = buckets.filter(b => sel.includes(b.id)).map(b => `${b.icon ? `${b.icon} ` : ''}${b.name}`);
+  const text =
+    `🪣 Assign to a bucket?\n\n` +
+    `${row.description || 'Expense'} · −${fmtAmount(row.amount)} ${row.currency}\n\n` +
+    `Buckets: ${names.length ? names.join(', ') : 'none'}\n` +
+    `Tap to toggle (optional), then Confirm.`;
+  const keyboard = Markup.inlineKeyboard([
+    ...buckets.map(b => [Markup.button.callback(
+      `${sel.includes(b.id) ? '✅ ' : ''}${b.icon ? `${b.icon} ` : ''}${b.name}`, `pn:b:${row.id}:${b.id}`)]),
+    [Markup.button.callback('✔️ Confirm', `pn:k:${row.id}`), Markup.button.callback('⬅️ Back', `pn:v:${row.id}`)],
+  ]);
+  return { text, keyboard };
+}
+
+// Bucket ids currently ticked on the message the user just tapped.
+function tickedBucketIds(ctx) {
+  const rows = ctx.callbackQuery?.message?.reply_markup?.inline_keyboard || [];
+  const ids = [];
+  for (const row of rows) {
+    for (const btn of row) {
+      const m = /^pn:b:\d+:(\d+)$/.exec(btn.callback_data || '');
+      if (m && btn.text.startsWith('✅ ')) ids.push(Number(m[1]));
+    }
+  }
+  return ids;
+}
+
+// Sends the next pending card as a NEW message (so the line confirming what was just
+// done stays in the chat), or says how the queue ended.
+async function sendNextPending(ctx, userId, afterId) {
+  const next = await nextPending(userId, afterId);
+  if (next) {
+    return ctx.reply(formatPendingCard(next, await countPending(userId)), pendingCardKeyboard(next));
+  }
+  const left = await countPending(userId);
+  return ctx.reply(left
+    ? `That's the end of the list — ${left} still pending (skipped). Send /pending to go through them again.`
+    : '🎉 All caught up — nothing left to review.');
+}
+
 // Telegram rejects edits that don't change anything and stale callback queries;
 // neither should crash the handler.
 async function safeEdit(ctx, text, keyboard) {
@@ -633,6 +702,94 @@ function createBot() {
     await safeEdit(ctx, '✖️ Assign cancelled.');
   });
 
+  // Review transactions the SMS webhook queued: details, bucket, confirm or dismiss.
+  instance.command('pending', async (ctx) => {
+    const user = await getLinkedUser(ctx.chat.id);
+    if (!user) return ctx.reply(NOT_LINKED_MSG);
+
+    const first = await nextPending(user.id, 0);
+    if (!first) return ctx.reply(NO_PENDING_MSG);
+    await ctx.reply(formatPendingCard(first, await countPending(user.id)), pendingCardKeyboard(first));
+  });
+
+  // One handler for every /pending button: pn:<c|d|n|v|b|k>:<pendingId>[:<bucketId>]
+  instance.action(/^pn:([a-z]):(\d+)(?::(\d+))?$/, async (ctx) => {
+    const [, act, idStr, extra] = ctx.match;
+    const id = Number(idStr);
+    await ctx.answerCbQuery().catch(() => {});
+    const user = await getLinkedUser(ctx.chat.id);
+    if (!user) return safeEdit(ctx, NOT_LINKED_MSG);
+
+    try {
+      const row = await getPending(user.id, id);
+      if (!row) {
+        // Handled elsewhere (web app, a double tap, an old message) — move on.
+        await safeEdit(ctx, '↪️ That one was already handled.');
+        return sendNextPending(ctx, user.id, id);
+      }
+
+      const isExpense = row.type === 'expense';
+      const buckets = isExpense ? await bucketModel.findByUser(user.id) : [];
+
+      const finish = async (bucketIds) => {
+        const res = await confirmPending(user.id, row.id, bucketIds.length ? { bucketIds } : {});
+        const names = buckets.filter(b => (res.created?.bucket_ids || []).includes(b.id)).map(b => b.name);
+        const sign = res.type === 'income' ? '+' : '−';
+        await safeEdit(ctx,
+          `✅ Saved ${res.type}: ${row.description || 'SMS transaction'} · ${sign}${fmtAmount(row.amount)} ${row.currency}` +
+          (names.length ? `\n🪣 ${names.join(', ')}` : '') +
+          (res.buckets_assigned === false ? '\n⚠️ Saved, but the bucket could not be assigned.' : ''));
+        return sendNextPending(ctx, user.id, row.id);
+      };
+
+      switch (act) {
+        case 'v': // back to the card
+          return safeEdit(ctx, formatPendingCard(row, await countPending(user.id)), pendingCardKeyboard(row));
+
+        case 'n': { // skip: replace this card with the next one, leaving this one pending
+          const next = await nextPending(user.id, row.id);
+          if (!next) {
+            const left = await countPending(user.id);
+            return safeEdit(ctx, `That's the end of the list — ${left} still pending. Send /pending to go through them again.`);
+          }
+          return safeEdit(ctx, formatPendingCard(next, await countPending(user.id)), pendingCardKeyboard(next));
+        }
+
+        case 'd': {
+          await rejectPending(user.id, row.id);
+          await safeEdit(ctx, `🗑 Dismissed: ${row.description || 'SMS transaction'} · ${fmtAmount(row.amount)} ${row.currency}`);
+          return sendNextPending(ctx, user.id, row.id);
+        }
+
+        case 'c': { // confirm — expenses are first asked about buckets, if the user has any
+          if (isExpense && buckets.length) {
+            const { text, keyboard } = renderPendingBucketStep(row, buckets, []);
+            return safeEdit(ctx, text, keyboard);
+          }
+          return finish([]);
+        }
+
+        case 'b': { // toggle one bucket on the step screen
+          const bid = Number(extra);
+          const ticked = tickedBucketIds(ctx);
+          const sel = ticked.includes(bid) ? ticked.filter(x => x !== bid) : [...ticked, bid];
+          const { text, keyboard } = renderPendingBucketStep(row, buckets, sel);
+          return safeEdit(ctx, text, keyboard);
+        }
+
+        case 'k': // confirm with whatever is ticked (possibly nothing)
+          return finish(tickedBucketIds(ctx));
+      }
+    } catch (err) {
+      if (err.status === 404) { // lost a race with another confirm
+        await safeEdit(ctx, '↪️ That one was already handled.');
+        return sendNextPending(ctx, user.id, id);
+      }
+      console.error('[telegram] /pending action failed', err);
+      await safeEdit(ctx, '⚠️ Something went wrong with that one. Send /pending to try again.').catch(() => {});
+    }
+  });
+
   instance.on('text', async (ctx) => {
     const chatId = ctx.chat.id;
     const text = ctx.message.text.trim();
@@ -848,6 +1005,7 @@ async function launch() {
       { command: 'currency', description: 'Quick FX conversion' },
       { command: 'undo',     description: 'Remove your last confirmed expenses' },
       { command: 'assign',   description: "Bucket a day's expenses one at a time" },
+      { command: 'pending',  description: 'Review transactions parsed from your SMS' },
       { command: 'digest',   description: 'Set up a daily/weekly spending digest' },
       { command: 'ask',      description: 'Ask a question about your finances' },
       { command: 'help',     description: 'Show what I can do' },
