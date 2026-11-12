@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { MessageSquare, CheckCircle, Copy, RefreshCw, Power } from 'lucide-react';
 import { getSmsWebhook, enableSmsWebhook, disableSmsWebhook } from '../../api/smsWebhookApi';
 import { showToast } from '../common/Toast';
@@ -9,12 +9,32 @@ export default function SmsWebhookConnect({ api }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy]       = useState(false);
 
-  const refresh = useCallback(async () => {
+  const busyRef = useRef(false);
+
+  const refresh = useCallback(async ({ silent = false } = {}) => {
     try { setHook(await getSmsWebhook(api)); }
-    catch { showToast('Failed to load SMS webhook', 'error'); }
+    catch { if (!silent) showToast('Failed to load SMS webhook', 'error'); }
   }, [api]);
 
   useEffect(() => { refresh().finally(() => setLoading(false)); }, [refresh]);
+
+  // The link is a rotating secret: "New link" (or enabling from another tab or
+  // device) replaces it server-side, and a page left open would keep showing a
+  // dead link. Re-read it whenever the user comes back to this tab. Skipped while
+  // one of our own actions is mid-flight so it can't race the response.
+  useEffect(() => {
+    const onReturn = () => {
+      if (document.visibilityState === 'visible' && !busyRef.current) refresh({ silent: true });
+    };
+    window.addEventListener('focus', onReturn);
+    document.addEventListener('visibilitychange', onReturn);
+    return () => {
+      window.removeEventListener('focus', onReturn);
+      document.removeEventListener('visibilitychange', onReturn);
+    };
+  }, [refresh]);
+
+  useEffect(() => { busyRef.current = busy; }, [busy]);
 
   async function run(fn, okMsg, failMsg) {
     setBusy(true);
