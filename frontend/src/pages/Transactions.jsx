@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Trash2, Pencil, CreditCard, ChevronDown, X, ArrowLeftRight, Repeat2, Plus, RefreshCw, ChevronUp, ChevronsUpDown, Search } from 'lucide-react';
+import { Trash2, Pencil, CreditCard, ChevronDown, X, ArrowLeftRight, Repeat2, Plus, RefreshCw, ChevronUp, ChevronsUpDown, Search, Inbox } from 'lucide-react';
 import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import { getExpenses, deleteExpense, bulkDeleteExpenses, updateExpense } from '../api/expensesApi';
 import { getCategories } from '../api/categoriesApi';
 import { getBuckets, setExpenseBuckets } from '../api/bucketsApi';
 import { getRecurring, createRecurring, deleteRecurring } from '../api/recurringApi';
+import { getPending } from '../api/pendingApi';
 import { showToast } from '../components/common/Toast';
 import Spinner from '../components/common/Spinner';
 import EmptyState from '../components/common/EmptyState';
@@ -14,6 +15,7 @@ import Modal from '../components/common/Modal';
 import TagInput from '../components/common/TagInput';
 import BucketPicker from '../components/common/BucketPicker';
 import ParsedExpenseConfirm from '../components/dashboard/ParsedExpenseConfirm';
+import PendingTransactions from '../components/transactions/PendingTransactions';
 
 const PAGE_SIZE = 20;
 
@@ -210,6 +212,9 @@ export default function Transactions() {
   const [showRecurringForm, setShowRecurringForm] = useState(false);
   const [recurringForm, setRecurringForm] = useState(emptyRecurringForm);
 
+  // ── Pending (SMS webhook) state ──────────────────────────────────────────
+  const [pending, setPending] = useState([]);
+
   // ── Fetch expenses ───────────────────────────────────────────────────────
   const fetchExpenses = useCallback(async () => {
     setLoading(true);
@@ -240,7 +245,12 @@ export default function Transactions() {
     setRecurringLoading(false);
   }, [api]);
 
+  const fetchPending = useCallback(async () => {
+    try { setPending((await getPending(api)).pending); } catch { /* badge is best-effort */ }
+  }, [api]);
+
   useEffect(() => { fetchExpenses(); }, [fetchExpenses]);
+  useEffect(() => { fetchPending(); }, [fetchPending]);
   useEffect(() => { getCategories(api).then(d => setCategories(d.categories)).catch(() => {}); }, [api]);
   useEffect(() => { getBuckets(api).then(d => setBuckets(d.buckets)).catch(() => {}); }, [api]);
   useEffect(() => { if (activeTab === 'recurring') fetchRecurring(); }, [activeTab, fetchRecurring]);
@@ -363,6 +373,20 @@ export default function Transactions() {
             {recurring.length > 0 && (
               <span className="ml-0.5 bg-brand-100 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400 text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
                 {recurring.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('pending')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              activeTab === 'pending'
+                ? 'bg-white dark:bg-slate-800 text-gray-900 dark:text-white shadow-sm'
+                : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300'
+            }`}>
+            <Inbox size={12} /> Pending
+            {pending.length > 0 && (
+              <span className="ml-0.5 bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                {pending.length}
               </span>
             )}
           </button>
@@ -705,6 +729,19 @@ export default function Transactions() {
             </form>
           </Modal>
         </>
+      )}
+
+      {/* ── PENDING TAB ──────────────────────────────────────────────────── */}
+      {activeTab === 'pending' && (
+        <PendingTransactions
+          api={api}
+          pending={pending}
+          categories={categories}
+          onChange={(confirmedType) => {
+            fetchPending();
+            if (confirmedType === 'expense') fetchExpenses();
+          }}
+        />
       )}
 
       {editingExpense && (

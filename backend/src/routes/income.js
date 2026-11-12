@@ -1,6 +1,7 @@
 const router  = require('express').Router();
 const auth    = require('../middleware/auth');
-const { query, queryOne, execute, pool } = require('../db/database');
+const { query, queryOne, execute } = require('../db/database');
+const { createIncomes } = require('../services/incomeService');
 
 const SOURCES = ['Salary', 'Business', 'Freelance', 'Investment', 'Rental', 'Gift', 'Other'];
 
@@ -38,35 +39,7 @@ router.post('/', auth, async (req, res, next) => {
     if (!Array.isArray(incomes) || !incomes.length)
       return res.status(400).json({ error: 'incomes array required' });
 
-    const client = await pool.connect();
-    const ids = [];
-    try {
-      await client.query('BEGIN');
-      for (const inc of incomes) {
-        if (!inc.amount || !inc.date) continue;
-        const r = await client.query(
-          `INSERT INTO incomes (user_id, amount, currency, exchange_rate, date, source, description, notes)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-          [
-            req.user.userId, parseFloat(inc.amount),
-            inc.currency ?? 'EGP',
-            typeof inc.exchange_rate === 'number' ? inc.exchange_rate : 1.0,
-            inc.date,
-            SOURCES.includes(inc.source) ? inc.source : 'Other',
-            inc.description ?? null,
-            inc.notes ?? null,
-          ]
-        );
-        ids.push(r.rows[0].id);
-      }
-      await client.query('COMMIT');
-    } catch (e) {
-      await client.query('ROLLBACK');
-      throw e;
-    } finally {
-      client.release();
-    }
-    const created = await Promise.all(ids.map(id => queryOne('SELECT * FROM incomes WHERE id = $1', [id])));
+    const created = await createIncomes(req.user.userId, incomes);
     res.status(201).json({ created });
   } catch (err) { next(err); }
 });

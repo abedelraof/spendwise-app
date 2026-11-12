@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: ExpenseBeam AI — Conversational Expense Logging, Editing & Q&A
+  title: ExpenseBeam API — Conversational Logging and SMS Webhook, Editing & Q&A
   description: >
     Spec for `POST /api/ai/converse`, plus the two existing `/api/ai`
     endpoints it shares auth/quota/caching behavior with, for context. As of
@@ -308,6 +308,127 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /sms-webhook:
+    get:
+      summary: SMS webhook status and the owner's private link
+      tags: [SMS Webhook]
+      responses:
+        '200':
+          description: "`{enabled: false}` when off, otherwise the link details"
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SmsWebhookStatus' }
+    post:
+      summary: Opt in, or rotate the link if already opted in
+      description: Generates a fresh 192-bit token. If one already exists it is replaced and the previous link stops working immediately.
+      tags: [SMS Webhook]
+      responses:
+        '200':
+          description: The new link
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SmsWebhookStatus' }
+    delete:
+      summary: Turn the SMS webhook off (the link starts returning 404)
+      tags: [SMS Webhook]
+      responses:
+        '200':
+          description: Disabled
+          content:
+            application/json:
+              schema: { type: object, properties: { success: { type: boolean } } }
+
+  /hooks/sms/{token}:
+    get:
+      summary: Receive one SMS from a phone automation (PUBLIC, token-authenticated)
+      description: >
+        No JWT — the secret `token` in the path identifies the user. It is a GET
+        because that is all most SMS-forwarder apps can send. The server decides
+        whether the SMS is an expense, an income, or not a transaction at all
+        (OTP, promo, balance notice...). Transactions are queued as **pending**
+        for the user to confirm; nothing is written to expenses/incomes here.
+        Identical text within 10 minutes is reported as a duplicate. Limited to
+        60 accepted calls per user per hour.
+      operationId: receiveSms
+      tags: [SMS Webhook]
+      security: []
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema: { type: string }
+        - in: query
+          name: msg
+          required: true
+          description: URL-encoded SMS text, truncated to 1000 characters. `message`, `text`, `body` and `sms` are accepted as alternative names.
+          schema: { type: string }
+          example: "Your card ending 1234 was charged EGP 450.50 at CARREFOUR on 12/11/26"
+      responses:
+        '200':
+          description: Processed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SmsHookResult' }
+              examples:
+                queued: { value: { status: pending, id: 42 } }
+                duplicate: { value: { status: duplicate, id: 42 } }
+                ignored: { value: { status: ignored } }
+        '400': { description: 'Missing msg parameter', content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        '404': { description: 'Unknown, malformed or rotated/disabled token', content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        '429': { description: 'More than 60 messages in an hour (Retry-After header set)', content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        '502': { description: 'Parsing failed (AI/DB error) — safe to retry; nothing was saved', content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+
+  /pending:
+    get:
+      summary: SMS transactions waiting for review (newest first, max 200)
+      tags: [Pending]
+      responses:
+        '200':
+          description: Pending list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pending:
+                    type: array
+                    items: { $ref: '#/components/schemas/PendingTransaction' }
+
+  /pending/{id}/confirm:
+    post:
+      summary: Save a pending transaction as a real expense or income
+      description: Optional body fields override what the parser guessed (including flipping `type`). Concurrent/double confirms are safe — the second gets 404.
+      tags: [Pending]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PendingEdits' }
+      responses:
+        '201':
+          description: Created. `created` is the full expense or income row.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type: { type: string, enum: [expense, income] }
+                  created: { type: object }
+        '400': { description: 'Invalid id or invalid edit value', content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        '404': { description: 'Not found (or not yours, or already handled)', content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+
+  /pending/{id}/reject:
+    post:
+      summary: Dismiss a pending transaction
+      tags: [Pending]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Dismissed, content: { application/json: { schema: { type: object, properties: { success: { type: boolean } } } } } }
+        '404': { description: 'Not found (or not yours, or already handled)', content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -316,6 +437,50 @@ components:
       bearerFormat: JWT
 
   schemas:
+    SmsWebhookStatus:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+        url: { type: string, description: The private receiver URL (contains the secret token) }
+        template: { type: string, description: "`url` + `?msg=` — what the user pastes into the phone automation" }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time, nullable: true }
+
+    SmsHookResult:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [pending, duplicate, ignored] }
+        id: { type: integer, description: Pending transaction id (pending and duplicate only) }
+
+    PendingTransaction:
+      type: object
+      properties:
+        id: { type: integer }
+        type: { type: string, enum: [expense, income], description: Decided by the AI parser from the SMS }
+        amount: { type: number }
+        currency: { type: string, example: EGP }
+        date: { type: string, example: "2026-11-12", description: Plain YYYY-MM-DD }
+        description: { type: string, nullable: true }
+        category: { type: string, nullable: true, description: One of the user's own categories (expenses); null → saved as "Other" }
+        source: { type: string, nullable: true, enum: [Salary, Business, Freelance, Investment, Rental, Gift, Other], description: Income only }
+        raw_text: { type: string, description: The original SMS }
+        status: { type: string, enum: [pending] }
+        created_at: { type: string, format: date-time }
+
+    PendingEdits:
+      type: object
+      description: All fields optional; invalid values return 400 without consuming the pending row.
+      properties:
+        type: { type: string, enum: [expense, income] }
+        amount: { type: number, minimum: 0.01 }
+        currency: { type: string, minLength: 3, maxLength: 3 }
+        date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+        description: { type: string, maxLength: 200 }
+        category: { type: string }
+        source: { type: string, enum: [Salary, Business, Freelance, Investment, Rental, Gift, Other] }
+
     ChatTurn:
       type: object
       required: [role, content]

@@ -17,6 +17,9 @@ if (telegramBot && process.env.TELEGRAM_MODE !== 'polling' && process.env.TELEGR
 app.use(express.json());
 
 app.use('/api/telegram-link', require('./routes/telegramLink'));
+app.use('/api/sms-webhook', require('./routes/smsWebhook')); // owner: opt in / rotate / disable the link
+app.use('/api/hooks',       require('./routes/hooks'));      // public: token-authenticated receivers
+app.use('/api/pending',     require('./routes/pending'));    // owner: review queue
 app.use('/api/auth',       require('./routes/auth'));
 app.use('/api/settings',   require('./routes/settings'));
 app.use('/api/categories', require('./routes/categories'));

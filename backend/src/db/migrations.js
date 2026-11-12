@@ -248,6 +248,37 @@ async function runMigrations() {
       ALTER TABLE telegram_links ADD COLUMN IF NOT EXISTS digest_frequency TEXT NOT NULL DEFAULT 'off';
     `);
 
+    // SMS webhook: one secret token per opted-in user, and the review queue it feeds.
+    // Parsed SMS never touch expenses/incomes directly — they land here as 'pending'
+    // until the user confirms them (anyone can send an SMS, so a human stays in the loop).
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS sms_webhooks (
+        user_id      INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        token        TEXT NOT NULL UNIQUE,
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        last_used_at TIMESTAMPTZ
+      );
+
+      CREATE TABLE IF NOT EXISTS pending_transactions (
+        id          SERIAL PRIMARY KEY,
+        user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        type        TEXT NOT NULL DEFAULT 'expense',   -- 'expense' | 'income'
+        amount      NUMERIC NOT NULL,
+        currency    TEXT NOT NULL,
+        date        TEXT NOT NULL,
+        description TEXT,
+        category    TEXT,                              -- suggested (expense); must be one of the user's own
+        source      TEXT,                              -- suggested (income)
+        raw_text    TEXT NOT NULL,
+        text_hash   TEXT NOT NULL,
+        status      TEXT NOT NULL DEFAULT 'pending',   -- 'pending' | 'confirmed' | 'rejected'
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        resolved_at TIMESTAMPTZ
+      );
+      CREATE INDEX IF NOT EXISTS idx_pending_user_status ON pending_transactions(user_id, status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_pending_user_hash   ON pending_transactions(user_id, text_hash, created_at);
+    `);
+
     console.log('[migrations] Schema up to date');
   } finally {
     client.release();

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Globe, FolderOpen, Upload, Trash2, ShieldAlert, Sparkles, Send } from 'lucide-react';
+import { Globe, FolderOpen, Upload, Trash2, ShieldAlert, Sparkles, Send, MessageSquare } from 'lucide-react';
 import useApi from '../hooks/useApi';
 import useAuth from '../hooks/useAuth';
 import { getSettings, updateSettings } from '../api/settingsApi';
@@ -11,6 +11,7 @@ import Modal from '../components/common/Modal';
 import CategoriesManager from '../components/settings/CategoriesManager';
 import CsvImport from '../components/settings/CsvImport';
 import TelegramConnect from '../components/settings/TelegramConnect';
+import SmsWebhookConnect from '../components/settings/SmsWebhookConnect';
 
 const CURRENCIES = ['EGP','USD','EUR','GBP','ILS','SAR','AED','JPY','CAD','AUD','CHF','INR'];
 
@@ -206,6 +207,11 @@ export default function Settings() {
       {/* Telegram */}
       <SectionCard icon={Send} title="Telegram">
         <TelegramConnect api={api} />
+      </SectionCard>
+
+      {/* SMS webhook */}
+      <SectionCard icon={MessageSquare} title="SMS webhook">
+        <SmsWebhookConnect api={api} />
       </SectionCard>
 
       {/* Categories */}

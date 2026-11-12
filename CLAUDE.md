@@ -95,7 +95,10 @@ D:\FlutterApp\
 │       │   ├── rates.js        ← GET /rates?base=X — thin wrapper over ratesService.getRates
 │       │   ├── search.js       ← GET /search?q=
 │       │   ├── import.js       ← POST /import/csv
-│       │   └── telegramLink.js ← GET/POST/DELETE /telegram-link — web-side linking-code flow for the bot
+│       │   ├── telegramLink.js ← GET/POST/DELETE /telegram-link — web-side linking-code flow for the bot
+│       │   ├── smsWebhook.js   ← GET/POST/DELETE /sms-webhook — owner opt-in / rotate / disable of the SMS link
+│       │   ├── hooks.js        ← PUBLIC GET /hooks/sms/:token?msg= — token-authenticated SMS receiver (no JWT)
+│       │   └── pending.js      ← GET /pending, POST /pending/:id/confirm|reject — SMS review queue
 │       ├── services/
 │       │   ├── aiService.js          ← Claude calls: parseExpenses(), reviseExpenses(), answerQuestion() (Finance Chat), generateInsight()
 │       │   ├── expenseService.js     ← getDashboardStats, getRangeStats (arbitrary date range), getFinanceContext, createExpenses (shared insert path)
@@ -106,6 +109,8 @@ D:\FlutterApp\
 │       │   ├── budgetService.js      ← budget limit checks
 │       │   ├── recurringService.js   ← processOverdue() → inserts expenses + advances dates
 │       │   ├── telegramBotService.js ← Telegraf bot: linking, expense parse/revise/confirm, all bot commands, proactive sends (see "Telegram Bot" section)
+│       │   ├── pendingService.js     ← ingestSms() (dedupe + parse + queue), listPending/confirmPending/rejectPending
+│       │   ├── incomeService.js      ← createIncomes() — shared insert path for POST /income and confirming a pending income
 │       │   └── cryptoService.js      ← encrypt()/decrypt() AES-256-GCM (legacy; not wired to any route now)
 │       └── utils/
 │           ├── dateUtils.js    ← todayISO(), yesterdayISO(), addInterval(), getMonthRange()
@@ -260,6 +265,20 @@ telegram_sessions (chat_id PRIMARY KEY → telegram_links, pending_expenses JSON
 telegram_bucket_sessions (chat_id PRIMARY KEY → telegram_links, state JSONB, updated_at)
 -- the /assign bucketing stepper's cursor state { date, label, txns[], cursor, sel[] };
 -- deliberately SEPARATE from telegram_sessions so on('text') never treats it as a pending expense parse
+
+sms_webhooks (user_id PRIMARY KEY → users, token UNIQUE, created_at, last_used_at)
+-- one secret token per opted-in user; the token in the URL path IS the credential for GET /api/hooks/sms/:token
+
+pending_transactions (
+  id, user_id, type,            -- 'expense' | 'income', decided by the AI parser
+  amount, currency, date (TEXT YYYY-MM-DD), description,
+  category,                     -- suggested; always one of the user's own category names, or NULL (→ 'Other' on confirm)
+  source,                       -- suggested income source (income only)
+  raw_text, text_hash,          -- original SMS (≤1000 chars) + sha256, used for the 10-min duplicate window
+  status,                       -- 'pending' | 'confirmed' | 'rejected'
+  created_at, resolved_at
+)
+-- INDEX: (user_id, status, created_at), (user_id, text_hash, created_at)
 ```
 
 ---
@@ -289,6 +308,15 @@ telegram_bucket_sessions (chat_id PRIMARY KEY → telegram_links, state JSONB, u
 - Response is `{status: "asking", message, quick_replies?}` while still gathering info, or `{status: "concluded", message, expenses: [...]}` once amount+description (and category, best-effort) are known for every expense discussed — the `expenses` shape matches what `/parse` returns, so the mobile client hands it straight to the same confirm/save screen used by the quick-entry flow.
 - Never asks about `currency`/`date` (always defaulted); can conclude with multiple expenses from one conversation.
 - **Deletion requests**: the same endpoint also resolves natural-language deletion requests ("clear this month's transactions", "delete my coffee expenses last week") to a third status, `{status: "delete_intent", message, filter: {start_date, end_date, category}}`. The prompt only classifies unambiguous deletion language as `delete_intent` (a spending *question* is never treated as one — falls back to `asking` when scope is ambiguous, since this drives an irreversible action downstream). `aiService.converseExpenses()` then re-validates the model's `filter` server-side as defense in depth: `category` must case-insensitively match one of the caller's real category names (normalized to the stored name) or it's nulled out, and `start_date`/`end_date` must be `YYYY-MM-DD` or they're nulled out. This endpoint never asserts a count — the client is expected to independently re-query `GET /expenses` with the returned filter to show a verified count before confirming, then call `DELETE /api/expenses/batch` with the exact pinned ids. Full contract: [backend/docs/ai-converse.openapi.yaml](backend/docs/ai-converse.openapi.yaml).
+
+### SMS Webhook → Pending Transactions (web)
+- **Opt-in**: Settings → "SMS webhook" (`SmsWebhookConnect.jsx`) → `POST /api/sms-webhook` mints a 192-bit token and returns the user's private link `https://<DOMAIN>/api/hooks/sms/<token>?msg=`. Calling `POST` again **rotates** the token (old link dies immediately); `DELETE` turns it off. The user points a phone automation (Tasker / MacroDroid / iOS Shortcuts) at it for every incoming SMS containing "EGP".
+- **Receiver**: `GET /api/hooks/sms/:token?msg=<urlencoded SMS>` (also accepts `message`, `text`, `body`, `sms` as the param name). It is **GET on purpose** — that is all most SMS-forwarder apps can send. No JWT: unknown/malformed token → `404`, missing message → `400`, >60 calls/hour per user → `429`, AI/DB failure → `502` (so the automation can retry; nothing is half-saved). Responses are always `Cache-Control: no-store`. A valid call returns `{status: "pending", id}` | `{status: "duplicate", id}` | `{status: "ignored"}`.
+- **Understanding the message**: `pendingService.ingestSms` → `aiService.parseSms()` decides whether the SMS is a completed **expense** or **income** (or not a transaction at all — OTPs, promos, balance notices, reminders and declined attempts are `ignored`) and extracts amount, currency, date (day-first, Arabic digits/text handled), merchant/description, and a category from the *user's own* list (or an income source). Every model field is re-validated server-side (positive amount, 3-letter currency, plausible date, real category) exactly like `converseExpenses`. Digit-less text skips the AI call entirely; the same SMS text within 10 minutes is deduped (phone apps retry).
+- **Why "pending"**: the SMS text is untrusted (anyone can send the user an SMS, and the link itself could leak), so parsed results never touch `expenses`/`incomes` directly. They sit in `pending_transactions` until the user reviews them in **Transactions → Pending** (`PendingTransactions.jsx`): Confirm, Edit-then-save (can flip expense↔income, fix amount/date/category/source), or Dismiss.
+- **Confirm** (`POST /api/pending/:id/confirm`, optional body `{type, amount, currency, date, description, category, source}`): claims the row atomically first (so a double-click can't create it twice; it is released back to `pending` if creation fails), then creates via `expenseService.createExpenses` or `incomeService.createIncomes`. `exchange_rate` is looked up when the SMS currency differs from the user's home currency (falls back to 1.0).
+- **AI cost**: like the Telegram bot this is not counted against the 100/month `enforceAiQuota` cap (an SMS-per-transaction volume would exhaust it instantly); the per-user 60/hour limiter in `routes/hooks.js` (in-memory, resets on restart) is the guard instead. Dates default to the server's UTC "today" when the SMS states none — same no-per-user-timezone limitation as the rest of the app.
+- Mobile app has no Pending screen yet (gotcha #14).
 
 ### Finance Chat (AI Q&A)
 - `FinanceChat.jsx` on the Dashboard lets the user ask free-form questions ("Am I on track with my budgets?")
@@ -493,6 +521,21 @@ Assignment lives on the expenses route: `PUT /api/expenses/:id/buckets { bucketI
 | GET | `/users/:id` | Single user detail |
 | DELETE | `/users/:id` | Delete a user |
 
+### SMS Webhook — `/api/sms-webhook` (JWT, owner side) and `/api/hooks` (public)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/sms-webhook` | `{ enabled, url, template, created_at, last_used_at }` (`{ enabled: false }` when off) |
+| POST | `/api/sms-webhook` | Opt in, or rotate to a new token if already on (old link stops working at once) |
+| DELETE | `/api/sms-webhook` | Turn off; the link 404s |
+| GET | `/api/hooks/sms/:token?msg=` | **Public.** Parse one SMS → `{status: "pending"\|"duplicate"\|"ignored"}`; 404 bad token, 400 no msg, 429 rate-limited, 502 AI failure |
+
+### Pending Transactions — `/api/pending`
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/` | `{ pending: [...] }` newest first, status `pending` only (max 200) |
+| POST | `/:id/confirm` | Save as an expense or income (optional edits in body) → `201 { type, created }`; 404 if already handled |
+| POST | `/:id/reject` | Dismiss → `{ success: true }` |
+
 ### Seed — `/api/seed`
 | Method | Path | Description |
 |--------|------|-------------|
@@ -582,3 +625,5 @@ Production runs via Docker Compose on a single host (`expensebeam.com`): a `post
 20. **Puppeteer is tightly coupled to the Alpine base image**: `backend/Dockerfile` installs the system `chromium` and sets `PUPPETEER_SKIP_DOWNLOAD` **above** the `npm ci` line — moving it below makes the build download a glibc Chromium that cannot run on musl. `PUPPETEER_EXECUTABLE_PATH` is what makes it work in-container; on a dev machine that variable is unset and Puppeteer resolves the copy it downloaded itself, so both environments share one code path. Dropping `font-noto-emoji` from the `apk add` silently turns every emoji in the report (including user category icons) into a tofu box, and dropping `ttf-dejavu` changes the whole card's typeface. The base image is pinned to `node:22-alpine3.21` on purpose: the system Chromium must stay CDP-compatible with the installed Puppeteer major, and skew shows up as `launch()` succeeding but `screenshot()` throwing.
 
 21. **`getMonthRange` drops the last day of 31-day months**: `new Date(year, month, 0)` builds a local-midnight date and `.toISOString()` then shifts it back a day in any positive-UTC-offset timezone — so July resolves to `2026-07-01 … 2026-07-30`. Every month-scoped query (dashboard stats, budgets, `/stats`, `/report`) inherits this and silently excludes expenses dated the 31st. Pre-existing and not specific to reports; fix it in `dateUtils.js` rather than working around it per-caller.
+
+22. **Local dev Postgres is a Docker container named `spendwise-postgres`** (image `postgres:16-alpine`, port 5432, matches the `DATABASE_URL` in `backend/.env`). If the backend dies with `ECONNREFUSED ::1:5432` locally, the container is just stopped — `docker start spendwise-postgres`. There is no Homebrew/Postgres.app install.
