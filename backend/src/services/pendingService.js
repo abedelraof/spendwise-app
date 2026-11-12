@@ -2,6 +2,8 @@ const crypto = require('crypto');
 const { query, queryOne, execute } = require('../db/database');
 const userModel = require('../models/userModel');
 const categoryModel = require('../models/categoryModel');
+const expenseModel = require('../models/expenseModel');
+const bucketModel = require('../models/bucketModel');
 const { parseSms } = require('./aiService');
 const { createExpenses } = require('./expenseService');
 const { createIncomes, SOURCES: INCOME_SOURCES } = require('./incomeService');
@@ -96,6 +98,14 @@ function cleanOverrides(o = {}) {
     if (!INCOME_SOURCES.includes(o.source)) throw new HttpError(400, 'invalid income source');
     out.source = o.source;
   }
+  // Buckets only apply to expenses; for an income they are accepted and ignored.
+  if (o.bucketIds !== undefined) {
+    if (!Array.isArray(o.bucketIds) || o.bucketIds.length > 50
+        || o.bucketIds.some(n => !Number.isInteger(n) || n <= 0)) {
+      throw new HttpError(400, 'bucketIds must be an array of bucket ids');
+    }
+    out.bucketIds = [...new Set(o.bucketIds)];
+  }
   return out;
 }
 
@@ -142,7 +152,23 @@ async function confirmPending(userId, id, overrides) {
       amount: final.amount, currency: final.currency, exchange_rate, date: final.date,
       description: final.description, category: final.category || 'Other', raw_text: row.raw_text,
     }]);
-    return { type: 'expense', created: created[0] };
+    let expense = created[0];
+
+    // The expense now exists, so a bucket failure must NOT hand the row back to
+    // 'pending' (a retry would save it twice). Report it instead and let the user
+    // assign buckets from the Buckets page. Non-owned bucket ids are dropped silently
+    // by setExpenseBuckets, same as everywhere else.
+    let bucketsAssigned = true;
+    if (edits.bucketIds?.length) {
+      try {
+        await bucketModel.setExpenseBuckets(userId, expense.id, edits.bucketIds);
+        expense = await expenseModel.findById(expense.id, userId);
+      } catch (err) {
+        console.error('[pending] bucket assignment failed:', err.message);
+        bucketsAssigned = false;
+      }
+    }
+    return { type: 'expense', created: expense, buckets_assigned: bucketsAssigned };
   } catch (err) {
     await execute(
       `UPDATE pending_transactions SET status = 'pending', resolved_at = NULL WHERE id = $1 AND user_id = $2`,

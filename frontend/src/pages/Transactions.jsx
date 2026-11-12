@@ -737,6 +737,7 @@ export default function Transactions() {
           api={api}
           pending={pending}
           categories={categories}
+          buckets={buckets}
           onChange={(confirmedType) => {
             fetchPending();
             if (confirmedType === 'expense') fetchExpenses();
